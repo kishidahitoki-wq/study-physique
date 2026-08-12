@@ -19,6 +19,19 @@ export default function Home() {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [status, setStatus] = useState<string>('INITIALIZING...');
 
+  // 1. 初回起動時：LocalStorage から保存されたカードを取得
+  useEffect(() => {
+    const saved = localStorage.getItem('physique_memos');
+    if (saved) {
+      try {
+        setMemos(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to load memos from LocalStorage', e);
+      }
+    }
+  }, []);
+
+  // 2. Service Worker の登録 & Web Push 初期化
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       navigator.serviceWorker.register('/sw.js').then(() => {
@@ -29,6 +42,35 @@ export default function Home() {
     }
   }, []);
 
+  // 3. メモの追加（LocalStorageにも保存）
+  const handleAddMemo = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+
+    const newMemo: Memo = {
+      id: Date.now().toString(),
+      type,
+      title,
+      answer: type === 'question' ? answer : undefined,
+      createdAt: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    const updatedMemos = [newMemo, ...memos];
+    setMemos(updatedMemos);
+    localStorage.setItem('physique_memos', JSON.stringify(updatedMemos));
+
+    setTitle('');
+    setAnswer('');
+  };
+
+  // 4. メモの削除（LocalStorageも更新）
+  const handleDeleteMemo = (id: string) => {
+    const updatedMemos = memos.filter(memo => memo.id !== id);
+    setMemos(updatedMemos);
+    localStorage.setItem('physique_memos', JSON.stringify(updatedMemos));
+  };
+
+  // 5. 通知の許可と登録
   const handleSubscribe = async () => {
     try {
       const permission = await Notification.requestPermission();
@@ -50,27 +92,7 @@ export default function Home() {
     }
   };
 
-  const handleAddMemo = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-
-    const newMemo: Memo = {
-      id: Date.now().toString(),
-      type,
-      title,
-      answer: type === 'question' ? answer : undefined,
-      createdAt: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    setMemos([newMemo, ...memos]);
-    setTitle('');
-    setAnswer('');
-  };
-
-  const handleDeleteMemo = (id: string) => {
-    setMemos(memos.filter(memo => memo.id !== id));
-  };
-
+  // 6. テスト通知予約
   const handleSchedulePush = async (memo: Memo) => {
     if (!subscription) {
       alert('先に画面上部の「NOTIFICATION ENABLE」を押してください');
@@ -78,7 +100,7 @@ export default function Home() {
     }
 
     const pushTitle = memo.type === 'question' ? `【復習】${memo.title}` : `【メモ】${memo.title}`;
-    const pushBody = memo.type === 'question' ? `答え：${memo.answer || 'なかも'}` : memo.title;
+    const pushBody = memo.type === 'question' ? `答え：${memo.answer || 'なし'}` : memo.title;
 
     const res = await fetch('/api/schedule', {
       method: 'POST',
@@ -101,7 +123,7 @@ export default function Home() {
   return (
     <div style={{ backgroundColor: '#090d16', color: '#f3f4f6', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       
-      {/* 1. Sticky Navigation Header */}
+      {/* Sticky Navigation Header */}
       <header style={{
         position: 'sticky',
         top: 0,
@@ -150,7 +172,7 @@ export default function Home() {
       {/* Main Container */}
       <main style={{ maxWidth: '640px', margin: '0 auto', padding: '32px 16px 80px 16px' }}>
 
-        {/* 2. Hero Section */}
+        {/* Hero Section */}
         <section style={{ textAlign: 'center', marginBottom: '40px' }}>
           <h1 style={{ fontSize: '32px', fontWeight: 800, margin: '0 0 8px 0', letterSpacing: '-0.02em' }}>
             Optimize Your Memory.
@@ -160,7 +182,7 @@ export default function Home() {
           </p>
         </section>
 
-        {/* 3. Form Card Section (Glassmorphism) */}
+        {/* Form Card Section */}
         <section style={{
           background: 'rgba(17, 24, 39, 0.7)',
           backdropFilter: 'blur(16px)',
@@ -281,7 +303,7 @@ export default function Home() {
           </form>
         </section>
 
-        {/* 4. Memo List Section */}
+        {/* Memo List Section */}
         <section>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: '#e5e7eb' }}>
