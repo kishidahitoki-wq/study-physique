@@ -5,9 +5,8 @@ const qstash = new Client({ token: process.env.QSTASH_TOKEN! });
 
 export async function POST(request: Request) {
   try {
-    const { subscription, delaySeconds } = await request.json();
+    const { subscription, delaySeconds, title, body } = await request.json();
     
-    // 直接本番URLを指定するか、VERCEL_URL に https:// を確実に補う
     const host = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || (host ? `https://${host}` : 'http://localhost:3000');
 
@@ -15,10 +14,10 @@ export async function POST(request: Request) {
       url: `${appUrl}/api/send-push`,
       body: {
         subscription,
-        title: 'マッチョくんからの通知',
-        body: '復習の時間だぞ！カタボリックを起こす前に復習しよう！',
+        title: title || 'マッチョくんからの通知',
+        body: body || '復習の時間だぞ！',
       },
-      delay: delaySeconds || 10, // デフォルト10秒後
+      delay: delaySeconds || 10,
     });
 
     return NextResponse.json({ success: true, messageId: res.messageId });
