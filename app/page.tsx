@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 
 type Memo = {
   id: string;
   type: 'question' | 'simple';
   title: string;
   answer?: string;
-  createdAt: string;
+  created_at: string;
 };
 
 export default function Home() {
@@ -15,23 +16,32 @@ export default function Home() {
   const [type, setType] = useState<'question' | 'simple'>('question');
   const [title, setTitle] = useState('');
   const [answer, setAnswer] = useState('');
+  const [loading, setLoading] = useState(true);
 
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [status, setStatus] = useState<string>('INITIALIZING...');
 
-  // 1. 初回起動時：LocalStorage から保存されたカードを取得
+  // 1. 初回起動時：Supabase からデータを取得
   useEffect(() => {
-    const saved = localStorage.getItem('physique_memos');
-    if (saved) {
-      try {
-        setMemos(JSON.parse(saved));
-      } catch (e) {
-        console.error('Failed to load memos from LocalStorage', e);
-      }
-    }
+    fetchMemos();
   }, []);
 
-  // 2. Service Worker の登録 & Web Push 初期化
+  const fetchMemos = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('memos')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('データ取得エラー:', error);
+    } else if (data) {
+      setMemos(data as Memo[]);
+    }
+    setLoading(false);
+  };
+
+  // 2. Service Worker & Push 初期化
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       navigator.serviceWorker.register('/sw.js').then(() => {
@@ -42,35 +52,46 @@ export default function Home() {
     }
   }, []);
 
-  // 3. メモの追加（LocalStorageにも保存）
-  const handleAddMemo = (e: React.FormEvent) => {
+  // 3. メモの追加（Supabaseに保存）
+  const handleAddMemo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
-    const newMemo: Memo = {
-      id: Date.now().toString(),
-      type,
-      title,
-      answer: type === 'question' ? answer : undefined,
-      createdAt: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
-    };
+    const { data, error } = await supabase
+      .from('memos')
+      .insert([
+        {
+          type,
+          title,
+          answer: type === 'question' ? answer : null,
+        }
+      ])
+      .select();
 
-    const updatedMemos = [newMemo, ...memos];
-    setMemos(updatedMemos);
-    localStorage.setItem('physique_memos', JSON.stringify(updatedMemos));
-
-    setTitle('');
-    setAnswer('');
+    if (error) {
+      alert('保存に失敗しました: ' + error.message);
+    } else if (data) {
+      setMemos([data[0] as Memo, ...memos]);
+      setTitle('');
+      setAnswer('');
+    }
   };
 
-  // 4. メモの削除（LocalStorageも更新）
-  const handleDeleteMemo = (id: string) => {
-    const updatedMemos = memos.filter(memo => memo.id !== id);
-    setMemos(updatedMemos);
-    localStorage.setItem('physique_memos', JSON.stringify(updatedMemos));
+  // 4. メモの削除（Supabaseから削除）
+  const handleDeleteMemo = async (id: string) => {
+    const { error } = await supabase
+      .from('memos')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      alert('削除に失敗しました: ' + error.message);
+    } else {
+      setMemos(memos.filter(memo => memo.id !== id));
+    }
   };
 
-  // 5. 通知の許可と登録
+  // 5. 通知の許可
   const handleSubscribe = async () => {
     try {
       const permission = await Notification.requestPermission();
@@ -92,7 +113,7 @@ export default function Home() {
     }
   };
 
-  // 6. テスト通知予約
+  // 6. 10秒後テスト通知
   const handleSchedulePush = async (memo: Memo) => {
     if (!subscription) {
       alert('先に画面上部の「NOTIFICATION ENABLE」を押してください');
@@ -114,7 +135,7 @@ export default function Home() {
     });
 
     if (res.ok) {
-      alert(`「${memo.title}」を10秒後に予約しました！アプリを閉じて待ってください。`);
+      alert(`「${memo.title}」を10秒後に予約しました！`);
     } else {
       alert('予約に失敗しました');
     }
@@ -123,7 +144,7 @@ export default function Home() {
   return (
     <div style={{ backgroundColor: '#090d16', color: '#f3f4f6', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       
-      {/* Sticky Navigation Header */}
+      {/* Header */}
       <header style={{
         position: 'sticky',
         top: 0,
@@ -169,20 +190,19 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main Container */}
+      {/* Main Content */}
       <main style={{ maxWidth: '640px', margin: '0 auto', padding: '32px 16px 80px 16px' }}>
 
-        {/* Hero Section */}
         <section style={{ textAlign: 'center', marginBottom: '40px' }}>
           <h1 style={{ fontSize: '32px', fontWeight: 800, margin: '0 0 8px 0', letterSpacing: '-0.02em' }}>
             Optimize Your Memory.
           </h1>
           <p style={{ color: '#9ca3af', fontSize: '14px', margin: 0 }}>
-            筋トレのように記憶を鍛える。忘却曲線を超越する通知型学習システム。
+            Supabaseクラウドデータベースと連携済み。
           </p>
         </section>
 
-        {/* Form Card Section */}
+        {/* Form Card */}
         <section style={{
           background: 'rgba(17, 24, 39, 0.7)',
           backdropFilter: 'blur(16px)',
@@ -192,8 +212,8 @@ export default function Home() {
           boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
           marginBottom: '40px'
         }}>
-          <h2 style={{ fontSize: '16px', fontWeight: 700, marginTop: 0, marginBottom: '20px', color: '#e5e7eb', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>新規カード作成</span>
+          <h2 style={{ fontSize: '16px', fontWeight: 700, marginTop: 0, marginBottom: '20px', color: '#e5e7eb' }}>
+            新規カード作成 (Supabaseへ保存)
           </h2>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '20px' }}>
@@ -208,8 +228,7 @@ export default function Home() {
                 color: type === 'question' ? '#00f2fe' : '#9ca3af',
                 fontWeight: 600,
                 fontSize: '13px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
+                cursor: 'pointer'
               }}
             >
               ❓ 問題 / 解答
@@ -225,8 +244,7 @@ export default function Home() {
                 color: type === 'simple' ? '#00f2fe' : '#9ca3af',
                 fontWeight: 600,
                 fontSize: '13px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
+                cursor: 'pointer'
               }}
             >
               📝 シンプルメモ
@@ -252,8 +270,7 @@ export default function Home() {
                   border: '1px solid rgba(255,255,255,0.1)',
                   color: '#fff',
                   fontSize: '14px',
-                  boxSizing: 'border-box',
-                  outline: 'none'
+                  boxSizing: 'border-box'
                 }}
               />
             </div>
@@ -276,8 +293,7 @@ export default function Home() {
                     border: '1px solid rgba(255,255,255,0.1)',
                     color: '#fff',
                     fontSize: '14px',
-                    boxSizing: 'border-box',
-                    outline: 'none'
+                    boxSizing: 'border-box'
                   }}
                 />
               </div>
@@ -294,16 +310,15 @@ export default function Home() {
                 fontWeight: 700,
                 fontSize: '14px',
                 cursor: 'pointer',
-                marginTop: '8px',
-                transition: 'opacity 0.2s'
+                marginTop: '8px'
               }}
             >
-              カードを追加する
+              Supabaseへ追加する
             </button>
           </form>
         </section>
 
-        {/* Memo List Section */}
+        {/* List */}
         <section>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: '#e5e7eb' }}>
@@ -314,9 +329,11 @@ export default function Home() {
             </span>
           </div>
 
-          {memos.length === 0 ? (
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: '#6b7280' }}>読み込み中...</div>
+          ) : memos.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '48px 0', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '16px', color: '#4b5563' }}>
-              <p style={{ margin: 0, fontSize: '14px' }}>登録されたカードがありません</p>
+              <p style={{ margin: 0, fontSize: '14px' }}>カードがありません</p>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -335,7 +352,6 @@ export default function Home() {
                     <span style={{
                       fontSize: '10px',
                       fontWeight: 800,
-                      letterSpacing: '0.05em',
                       padding: '3px 8px',
                       borderRadius: '6px',
                       background: memo.type === 'question' ? 'rgba(0, 242, 254, 0.15)' : 'rgba(255, 255, 255, 0.1)',
@@ -343,7 +359,9 @@ export default function Home() {
                     }}>
                       {memo.type === 'question' ? 'QUESTION' : 'MEMO'}
                     </span>
-                    <span style={{ fontSize: '11px', color: '#4b5563' }}>{memo.createdAt}</span>
+                    <span style={{ fontSize: '11px', color: '#4b5563' }}>
+                      {new Date(memo.created_at).toLocaleDateString('ja-JP')}
+                    </span>
                   </div>
 
                   <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', fontWeight: 600, color: '#f3f4f6' }}>{memo.title}</h3>
