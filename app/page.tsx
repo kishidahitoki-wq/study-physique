@@ -41,16 +41,23 @@ export default function Home() {
     setLoading(false);
   };
 
-  // 2. Service Worker & Push 初期化
-  useEffect(() => {
+    // 2. Service Worker & Push 初期化（既存の登録情報を自動取得）
+    useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
-      navigator.serviceWorker.register('/sw.js').then(() => {
+        navigator.serviceWorker.register('/sw.js').then(async (reg) => {
         setStatus('READY');
-      }).catch(err => setStatus('SW ERROR: ' + err.message));
+        
+        // 👇 過去に登録された PushSubscription があるか確認
+        const existingSub = await reg.pushManager.getSubscription();
+        if (existingSub) {
+            setSubscription(existingSub);
+            setStatus('PUSH ENABLED');
+        }
+        }).catch(err => setStatus('SW ERROR: ' + err.message));
     } else {
-      setStatus('UNSUPPORTED (iOS NEEDS PWA)');
+        setStatus('UNSUPPORTED (iOS NEEDS PWA)');
     }
-  }, []);
+    }, []);
 
   // 3. メモの追加（Supabaseに保存）
   const handleAddMemo = async (e: React.FormEvent) => {
