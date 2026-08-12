@@ -2,10 +2,9 @@
 
 import { useState, useEffect } from 'react';
 
-// メモ（問題・解答）の型定義
 type Memo = {
   id: string;
-  type: 'question' | 'simple'; // 「問題・解答」か「シンプルメモ」か
+  type: 'question' | 'simple';
   title: string;
   answer?: string;
   createdAt: string;
@@ -17,22 +16,19 @@ export default function Home() {
   const [title, setTitle] = useState('');
   const [answer, setAnswer] = useState('');
 
-  // Web Push 関連の状態
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
-  const [status, setStatus] = useState<string>('初期化中...');
+  const [status, setStatus] = useState<string>('INITIALIZING...');
 
-  // Service Worker の登録 & Web Push 初期化
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       navigator.serviceWorker.register('/sw.js').then(() => {
-        setStatus('準備完了');
-      }).catch(err => setStatus('SW登録失敗: ' + err.message));
+        setStatus('READY');
+      }).catch(err => setStatus('SW ERROR: ' + err.message));
     } else {
-      setStatus('Web Push未対応環境です（iOSはホーム追加必須）');
+      setStatus('UNSUPPORTED (iOS NEEDS PWA)');
     }
   }, []);
 
-  // 通知の許可と登録
   const handleSubscribe = async () => {
     try {
       const permission = await Notification.requestPermission();
@@ -48,13 +44,12 @@ export default function Home() {
       });
 
       setSubscription(sub);
-      setStatus('通知許可OK！');
+      setStatus('PUSH ENABLED');
     } catch (err: any) {
       alert('エラー: ' + err.message);
     }
   };
 
-  // メモの追加
   const handleAddMemo = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
@@ -72,20 +67,18 @@ export default function Home() {
     setAnswer('');
   };
 
-  // メモの削除
   const handleDeleteMemo = (id: string) => {
     setMemos(memos.filter(memo => memo.id !== id));
   };
 
-  // 特定のメモを10秒後に通知テスト
   const handleSchedulePush = async (memo: Memo) => {
     if (!subscription) {
-      alert('先に画面上の「通知を許可して登録」ボタンを押してください');
+      alert('先に画面上部の「NOTIFICATION ENABLE」を押してください');
       return;
     }
 
     const pushTitle = memo.type === 'question' ? `【復習】${memo.title}` : `【メモ】${memo.title}`;
-    const pushBody = memo.type === 'question' ? `答え：${memo.answer || 'なしかも'}` : memo.title;
+    const pushBody = memo.type === 'question' ? `答え：${memo.answer || 'なかも'}` : memo.title;
 
     const res = await fetch('/api/schedule', {
       method: 'POST',
@@ -99,155 +92,286 @@ export default function Home() {
     });
 
     if (res.ok) {
-      alert(`「${memo.title}」を10秒後に通知予約しました！アプリを閉じて待ってください。`);
+      alert(`「${memo.title}」を10秒後に予約しました！アプリを閉じて待ってください。`);
     } else {
-      alert('通知予約に失敗しました');
+      alert('予約に失敗しました');
     }
   };
 
   return (
-    <main style={{ padding: '24px 16px', fontFamily: 'sans-serif', maxWidth: '600px', margin: '0 auto', color: '#333' }}>
-      <h1 style={{ fontSize: '24px', textAlign: 'center', marginBottom: '8px' }}>💪 Physique Study</h1>
-      <p style={{ textAlign: 'center', color: '#666', fontSize: '14px', marginBottom: '20px' }}>
-        ステータス: {status}
-      </p>
-
-      {/* 通知許可ボタン */}
-      {!subscription && (
-        <div style={{ textIndent: 0, textAlign: 'center', marginBottom: '24px' }}>
-          <button 
-            onClick={handleSubscribe}
-            style={{ padding: '10px 20px', fontSize: '14px', backgroundColor: '#22c55e', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
-          >
-            🔔 通知を許可して有効化する
-          </button>
-        </div>
-      )}
-
-      {/* メモ登録フォーム */}
-      <div style={{ backgroundColor: '#f9fafb', padding: '16px', borderRadius: '12px', border: '1px solid #e5e7eb', marginBottom: '32px' }}>
-        <h2 style={{ fontSize: '18px', marginTop: 0, marginBottom: '12px' }}>新規メモ・問題の追加</h2>
-        
-        {/* タイプ選択（問題 vs シンプルメモ） */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-          <button
-            type="button"
-            onClick={() => setType('question')}
-            style={{
-              flex: 1,
-              padding: '8px',
-              borderRadius: '6px',
-              border: '1px solid #ccc',
-              backgroundColor: type === 'question' ? '#2563eb' : '#fff',
-              color: type === 'question' ? '#fff' : '#333',
-              fontWeight: 'bold',
-              cursor: 'pointer'
-            }}
-          >
-            ❓ 問題と解答
-          </button>
-          <button
-            type="button"
-            onClick={() => setType('simple')}
-            style={{
-              flex: 1,
-              padding: '8px',
-              borderRadius: '6px',
-              border: '1px solid #ccc',
-              backgroundColor: type === 'simple' ? '#2563eb' : '#fff',
-              color: type === 'simple' ? '#fff' : '#333',
-              fontWeight: 'bold',
-              cursor: 'pointer'
-            }}
-          >
-            📝 シンプルメモ
-          </button>
+    <div style={{ backgroundColor: '#090d16', color: '#f3f4f6', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
+      
+      {/* 1. Sticky Navigation Header */}
+      <header style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 50,
+        backdropFilter: 'blur(12px)',
+        backgroundColor: 'rgba(9, 13, 22, 0.8)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+        padding: '12px 24px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: status === 'PUSH ENABLED' ? '#00f2fe' : '#e11d48', boxShadow: status === 'PUSH ENABLED' ? '0 0 10px #00f2fe' : 'none' }}></div>
+          <span style={{ fontWeight: 800, fontSize: '18px', letterSpacing: '0.05em', background: 'linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+            PHYSIQUE STUDY
+          </span>
         </div>
 
-        <form onSubmit={handleAddMemo} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>
-              {type === 'question' ? '問題文 / 表面' : 'メモタイトル'}
-            </label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder={type === 'question' ? '例: アナボリックとは？' : '例: 明日のトレメニュー'}
-              required
-              style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box' }}
-            />
+        <div>
+          {!subscription ? (
+            <button
+              onClick={handleSubscribe}
+              style={{
+                background: 'linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)',
+                color: '#090d16',
+                border: 'none',
+                padding: '8px 16px',
+                borderRadius: '20px',
+                fontWeight: 700,
+                fontSize: '12px',
+                cursor: 'pointer',
+                boxShadow: '0 0 15px rgba(0, 242, 254, 0.4)'
+              }}
+            >
+              NOTIFICATION ENABLE
+            </button>
+          ) : (
+            <span style={{ fontSize: '11px', color: '#00f2fe', letterSpacing: '0.1em', fontWeight: 600, border: '1px solid rgba(0,242,254,0.3)', padding: '4px 10px', borderRadius: '12px' }}>
+              ONLINE / ACTIVE
+            </span>
+          )}
+        </div>
+      </header>
+
+      {/* Main Container */}
+      <main style={{ maxWidth: '640px', margin: '0 auto', padding: '32px 16px 80px 16px' }}>
+
+        {/* 2. Hero Section */}
+        <section style={{ textAlign: 'center', marginBottom: '40px' }}>
+          <h1 style={{ fontSize: '32px', fontWeight: 800, margin: '0 0 8px 0', letterSpacing: '-0.02em' }}>
+            Optimize Your Memory.
+          </h1>
+          <p style={{ color: '#9ca3af', fontSize: '14px', margin: 0 }}>
+            筋トレのように記憶を鍛える。忘却曲線を超越する通知型学習システム。
+          </p>
+        </section>
+
+        {/* 3. Form Card Section (Glassmorphism) */}
+        <section style={{
+          background: 'rgba(17, 24, 39, 0.7)',
+          backdropFilter: 'blur(16px)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          borderRadius: '20px',
+          padding: '24px',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
+          marginBottom: '40px'
+        }}>
+          <h2 style={{ fontSize: '16px', fontWeight: 700, marginTop: 0, marginBottom: '20px', color: '#e5e7eb', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>新規カード作成</span>
+          </h2>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '20px' }}>
+            <button
+              type="button"
+              onClick={() => setType('question')}
+              style={{
+                padding: '10px',
+                borderRadius: '12px',
+                border: type === 'question' ? '1px solid #00f2fe' : '1px solid rgba(255,255,255,0.05)',
+                background: type === 'question' ? 'rgba(0, 242, 254, 0.1)' : 'rgba(255,255,255,0.02)',
+                color: type === 'question' ? '#00f2fe' : '#9ca3af',
+                fontWeight: 600,
+                fontSize: '13px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              ❓ 問題 / 解答
+            </button>
+            <button
+              type="button"
+              onClick={() => setType('simple')}
+              style={{
+                padding: '10px',
+                borderRadius: '12px',
+                border: type === 'simple' ? '1px solid #00f2fe' : '1px solid rgba(255,255,255,0.05)',
+                background: type === 'simple' ? 'rgba(0, 242, 254, 0.1)' : 'rgba(255,255,255,0.02)',
+                color: type === 'simple' ? '#00f2fe' : '#9ca3af',
+                fontWeight: 600,
+                fontSize: '13px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              📝 シンプルメモ
+            </button>
           </div>
 
-          {type === 'question' && (
+          <form onSubmit={handleAddMemo} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>
-                解答 / 裏面
+              <label style={{ display: 'block', fontSize: '12px', color: '#9ca3af', fontWeight: 600, marginBottom: '6px' }}>
+                {type === 'question' ? 'QUESTION' : 'TITLE'}
               </label>
-              <textarea
-                value={answer}
-                onChange={(e) => setAnswer(e.target.value)}
-                placeholder="例: 体内で物質が合成されて組織が作られること（筋肥大など）"
-                rows={3}
-                style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box' }}
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={type === 'question' ? '例: アナボリックとは？' : '例: 今日のメモ'}
+                required
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  background: 'rgba(0,0,0,0.3)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  color: '#fff',
+                  fontSize: '14px',
+                  boxSizing: 'border-box',
+                  outline: 'none'
+                }}
               />
             </div>
-          )}
 
-          <button
-            type="submit"
-            style={{ padding: '12px', backgroundColor: '#111827', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', marginTop: '8px' }}
-          >
-            保存する
-          </button>
-        </form>
-      </div>
+            {type === 'question' && (
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', color: '#9ca3af', fontWeight: 600, marginBottom: '6px' }}>
+                  ANSWER
+                </label>
+                <textarea
+                  value={answer}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  placeholder="例: 同化作用。物質を合成して組織を作るプロセスのこと。"
+                  rows={3}
+                  style={{
+                    width: '100%',
+                    padding: '12px 16px',
+                    borderRadius: '10px',
+                    background: 'rgba(0,0,0,0.3)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    color: '#fff',
+                    fontSize: '14px',
+                    boxSizing: 'border-box',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+            )}
 
-      {/* メモ一覧 */}
-      <h2 style={{ fontSize: '18px', marginBottom: '12px' }}>登録済みメモ・問題 ({memos.length})</h2>
-      {memos.length === 0 ? (
-        <p style={{ textAlign: 'center', color: '#9ca3af', padding: '24px 0' }}>まだメモがありません</p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {memos.map((memo) => (
-            <div
-              key={memo.id}
-              style={{ padding: '16px', borderRadius: '8px', border: '1px solid #e5e7eb', backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}
+            <button
+              type="submit"
+              style={{
+                padding: '14px',
+                background: '#f3f4f6',
+                color: '#090d16',
+                border: 'none',
+                borderRadius: '12px',
+                fontWeight: 700,
+                fontSize: '14px',
+                cursor: 'pointer',
+                marginTop: '8px',
+                transition: 'opacity 0.2s'
+              }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <span style={{ fontSize: '12px', padding: '2px 8px', borderRadius: '4px', backgroundColor: memo.type === 'question' ? '#dbeafe' : '#f3f4f6', color: memo.type === 'question' ? '#1e40af' : '#374151', fontWeight: 'bold' }}>
-                  {memo.type === 'question' ? '問題' : 'メモ'}
-                </span>
-                <span style={{ fontSize: '12px', color: '#9ca3af' }}>{memo.createdAt}</span>
-              </div>
+              カードを追加する
+            </button>
+          </form>
+        </section>
 
-              <h3 style={{ margin: '0 0 8px 0', fontSize: '16px' }}>{memo.title}</h3>
-              
-              {memo.type === 'question' && memo.answer && (
-                <div style={{ backgroundColor: '#f8fafc', padding: '8px 12px', borderRadius: '6px', fontSize: '14px', color: '#475569', marginBottom: '12px' }}>
-                  <strong>答:</strong> {memo.answer}
-                </div>
-              )}
+        {/* 4. Memo List Section */}
+        <section>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h2 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: '#e5e7eb' }}>
+              登録済みリスト
+            </h2>
+            <span style={{ fontSize: '12px', color: '#6b7280', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '10px' }}>
+              {memos.length} CARDS
+            </span>
+          </div>
 
-              <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                <button
-                  onClick={() => handleSchedulePush(memo)}
-                  style={{ flex: 1, padding: '8px', fontSize: '12px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-                >
-                  ⏰ 10秒後にテスト通知
-                </button>
-                <button
-                  onClick={() => handleDeleteMemo(memo.id)}
-                  style={{ padding: '8px 12px', fontSize: '12px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                >
-                  削除
-                </button>
-              </div>
+          {memos.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '48px 0', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '16px', color: '#4b5563' }}>
+              <p style={{ margin: 0, fontSize: '14px' }}>登録されたカードがありません</p>
             </div>
-          ))}
-        </div>
-      )}
-    </main>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {memos.map((memo) => (
+                <div
+                  key={memo.id}
+                  style={{
+                    background: 'rgba(17, 24, 39, 0.4)',
+                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                    borderRadius: '16px',
+                    padding: '20px',
+                    backdropFilter: 'blur(8px)'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <span style={{
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      letterSpacing: '0.05em',
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      background: memo.type === 'question' ? 'rgba(0, 242, 254, 0.15)' : 'rgba(255, 255, 255, 0.1)',
+                      color: memo.type === 'question' ? '#00f2fe' : '#9ca3af'
+                    }}>
+                      {memo.type === 'question' ? 'QUESTION' : 'MEMO'}
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#4b5563' }}>{memo.createdAt}</span>
+                  </div>
+
+                  <h3 style={{ margin: '0 0 10px 0', fontSize: '16px', fontWeight: 600, color: '#f3f4f6' }}>{memo.title}</h3>
+
+                  {memo.type === 'question' && memo.answer && (
+                    <div style={{ background: 'rgba(0,0,0,0.2)', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', color: '#9ca3af', marginBottom: '16px', borderLeft: '2px solid #00f2fe' }}>
+                      {memo.answer}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                    <button
+                      onClick={() => handleSchedulePush(memo)}
+                      style={{
+                        flex: 1,
+                        padding: '10px',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        background: 'rgba(0, 242, 254, 0.08)',
+                        color: '#00f2fe',
+                        border: '1px solid rgba(0, 242, 254, 0.2)',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ⏱ 10秒後にテスト通知
+                    </button>
+                    <button
+                      onClick={() => handleDeleteMemo(memo.id)}
+                      style={{
+                        padding: '10px 14px',
+                        fontSize: '12px',
+                        background: 'transparent',
+                        color: '#ef4444',
+                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      削除
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+      </main>
+    </div>
   );
 }
 
