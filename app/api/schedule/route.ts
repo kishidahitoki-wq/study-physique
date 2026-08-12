@@ -7,8 +7,9 @@ export async function POST(request: Request) {
   try {
     const { subscription, delaySeconds } = await request.json();
     
-    // Vercelデプロイ時のドメインを自動取得
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || `https://${process.env.VERCEL_URL}`;
+    // 直接本番URLを指定するか、VERCEL_URL に https:// を確実に補う
+    const host = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || (host ? `https://${host}` : 'http://localhost:3000');
 
     const res = await qstash.publishJSON({
       url: `${appUrl}/api/send-push`,
