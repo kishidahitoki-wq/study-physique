@@ -35,6 +35,10 @@ export default function Home() {
   const [todayTasks, setTodayTasks] = useState<ReviewTask[]>([]);
   const [selectedTag, setSelectedTag] = useState<string>('ALL');
 
+  // 🔍 1. 検索＆シャッフル用ステート
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isShuffled, setIsShuffled] = useState<boolean>(false);
+
   // アコーディオン開閉状態
   const [showAnswerReviewMap, setShowAnswerReviewMap] = useState<{ [key: string]: boolean }>({});
   const [showAnswerPracticeMap, setShowAnswerPracticeMap] = useState<{ [key: string]: boolean }>({});
@@ -333,7 +337,31 @@ export default function Home() {
     new Set(memos.map((m) => m.tag).filter((t): t is string => Boolean(t)))
   );
 
-  const filteredMemos = selectedTag === 'ALL' ? memos : memos.filter((m) => m.tag === selectedTag);
+  // 🔍 フィルター＆検索＆シャッフル処理
+  const getFilteredMemos = () => {
+    let result = memos;
+
+    if (selectedTag !== 'ALL') {
+      result = result.filter((m) => m.tag === selectedTag);
+    }
+
+    if (searchQuery.trim() !== '') {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (m) =>
+          m.title.toLowerCase().includes(q) ||
+          (m.answer && m.answer.toLowerCase().includes(q))
+      );
+    }
+
+    if (isShuffled) {
+      result = [...result].sort(() => Math.random() - 0.5);
+    }
+
+    return result;
+  };
+
+  const filteredMemos = getFilteredMemos();
   const filteredTodayTasks =
     selectedTag === 'ALL' ? todayTasks : todayTasks.filter((t) => t.memo.tag === selectedTag);
 
@@ -801,89 +829,143 @@ export default function Home() {
         )}
 
         {/* ========================================================= */}
-        {/* TAB 2: 全メモ一覧画面 */}
+        {/* TAB 2: 全メモ一覧画面（検索 ＆ シャッフル対応） */}
         {/* ========================================================= */}
         {activeTab === 'practice' && (
-          <section style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {filteredMemos.map((memo) => (
-              <div
-                key={memo.id}
+          <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {/* 🔍 1. 検索バー & 2. シャッフルボタン */}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="🔍 メモを検索..."
                 style={{
+                  flex: 1,
+                  padding: '10px 14px',
+                  borderRadius: '14px',
                   backgroundColor: '#ffffff',
-                  borderRadius: '16px',
-                  padding: '16px',
-                  boxShadow: '0 4px 10px rgba(0,0,0,0.02)',
-                  border: '1px solid #f1f5f9',
+                  border: '1px solid #e2e8f0',
+                  color: '#0f172a',
+                  fontSize: '12px',
+                  outline: 'none',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+                }}
+              />
+              <button
+                onClick={() => setIsShuffled(!isShuffled)}
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: '14px',
+                  backgroundColor: isShuffled ? '#10b981' : '#ffffff',
+                  color: isShuffled ? '#ffffff' : '#475569',
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  border: isShuffled ? 'none' : '1px solid #e2e8f0',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+                  whiteSpace: 'nowrap',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      fontWeight: 700,
-                      color: memo.type === 'question' ? '#3b82f6' : '#64748b',
-                      backgroundColor: memo.type === 'question' ? '#eff6ff' : '#f1f5f9',
-                      padding: '2px 8px',
-                      borderRadius: '8px',
-                    }}
-                  >
-                    {memo.type === 'question' ? '問題' : 'メモ'}
-                  </span>
-                  {memo.tag && (
+                🔀 シャッフル
+              </button>
+            </div>
+
+            {/* カード一覧表示 */}
+            {filteredMemos.length === 0 ? (
+              <div
+                style={{
+                  textAlign: 'center',
+                  padding: '30px 20px',
+                  backgroundColor: '#ffffff',
+                  borderRadius: '16px',
+                  color: '#94a3b8',
+                  fontSize: '12px',
+                }}
+              >
+                該当するメモが見つかりません
+              </div>
+            ) : (
+              filteredMemos.map((memo) => (
+                <div
+                  key={memo.id}
+                  style={{
+                    backgroundColor: '#ffffff',
+                    borderRadius: '16px',
+                    padding: '16px',
+                    boxShadow: '0 4px 10px rgba(0,0,0,0.02)',
+                    border: '1px solid #f1f5f9',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                     <span
                       style={{
                         fontSize: '10px',
                         fontWeight: 700,
-                        color: '#059669',
-                        backgroundColor: '#ecfdf5',
-                        border: '1px solid #a7f3d0',
+                        color: memo.type === 'question' ? '#3b82f6' : '#64748b',
+                        backgroundColor: memo.type === 'question' ? '#eff6ff' : '#f1f5f9',
                         padding: '2px 8px',
                         borderRadius: '8px',
                       }}
                     >
-                      #{memo.tag}
+                      {memo.type === 'question' ? '問題' : 'メモ'}
                     </span>
-                  )}
-                </div>
-
-                <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>{memo.title}</div>
-
-                {memo.type === 'question' && memo.answer && (
-                  <div style={{ marginTop: '8px' }}>
-                    {showAnswerPracticeMap[memo.id] ? (
-                      <div
+                    {memo.tag && (
+                      <span
                         style={{
-                          backgroundColor: '#f8fafc',
-                          padding: '10px 12px',
-                          borderRadius: '8px',
-                          fontSize: '12px',
-                          color: '#475569',
-                          marginTop: '6px',
-                        }}
-                      >
-                        {memo.answer}
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => togglePracticeAnswer(memo.id)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: '#10b981',
-                          fontSize: '11px',
+                          fontSize: '10px',
                           fontWeight: 700,
-                          cursor: 'pointer',
-                          padding: 0,
-                          marginTop: '4px',
+                          color: '#059669',
+                          backgroundColor: '#ecfdf5',
+                          border: '1px solid #a7f3d0',
+                          padding: '2px 8px',
+                          borderRadius: '8px',
                         }}
                       >
-                        答えを確認
-                      </button>
+                        #{memo.tag}
+                      </span>
                     )}
                   </div>
-                )}
-              </div>
-            ))}
+
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>{memo.title}</div>
+
+                  {memo.type === 'question' && memo.answer && (
+                    <div style={{ marginTop: '8px' }}>
+                      {showAnswerPracticeMap[memo.id] ? (
+                        <div
+                          style={{
+                            backgroundColor: '#f8fafc',
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            fontSize: '12px',
+                            color: '#475569',
+                            marginTop: '6px',
+                          }}
+                        >
+                          {memo.answer}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => togglePracticeAnswer(memo.id)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#10b981',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            padding: 0,
+                            marginTop: '4px',
+                          }}
+                        >
+                          答えを確認
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
           </section>
         )}
 
@@ -1071,7 +1153,6 @@ export default function Home() {
                       boxSizing: 'border-box',
                     }}
                   />
-                  {/* 💡 過去に使ったタグをタップで簡単選択 */}
                   {allTags.length > 0 && (
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px', alignItems: 'center' }}>
                       <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>候補:</span>
