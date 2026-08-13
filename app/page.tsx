@@ -3,27 +3,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { FORGETTING_STAGES, calculateRandomScheduleTime } from '@/lib/scheduler';
-import dynamic from 'next/dynamic';
-
-// 3Dコンポーネント（猫モデル等）をクライアント限定で動的読み込み
-const PhysiqueModel = dynamic(() => import('@/components/PhysiqueModel'), {
-  ssr: false,
-  loading: () => (
-    <div
-      style={{
-        height: '180px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#94a3b8',
-        fontSize: '12px',
-        fontWeight: '600',
-      }}
-    >
-      Loading Cat Model...
-    </div>
-  ),
-});
 
 type Memo = {
   id: string;
@@ -42,11 +21,11 @@ type ReviewTask = {
 
 // 猫の成長ランク定義
 const CAT_STAGES = [
-  { level: 1, name: 'LV.1 こねこ', minLove: 0, status: '腹ペコ' },
-  { level: 2, name: 'LV.2 すこやか猫', minLove: 100, status: 'ごきげん' },
-  { level: 3, name: 'LV.3 サイバーにゃん', minLove: 300, status: 'ウキウキ' },
-  { level: 4, name: 'LV.4 まっちょ猫', minLove: 600, status: 'むきむき' },
-  { level: 5, name: 'LV.MAX 神猫', minLove: 1000, status: '神々しい' },
+  { level: 1, name: 'LV.1 こねこ', minLove: 0, status: '腹ペコ', emoji: '🐱' },
+  { level: 2, name: 'LV.2 すこやか猫', minLove: 100, status: 'ごきげん', emoji: '😸' },
+  { level: 3, name: 'LV.3 サイバーにゃん', minLove: 300, status: 'ウキウキ', emoji: '😺' },
+  { level: 4, name: 'LV.4 まっちょ猫', minLove: 600, status: 'むきむき', emoji: '😼' },
+  { level: 5, name: 'LV.MAX 神猫', minLove: 1000, status: '神々しい', emoji: '😻' },
 ];
 
 export default function Home() {
@@ -450,7 +429,7 @@ export default function Home() {
 
       {/* Main Content */}
       <main style={{ maxWidth: '480px', margin: '0 auto' }}>
-        {/* ── 🐱 CAT CARD ── */}
+        {/* ── 🐱 CAT CARD (Simple View) ── */}
         <div
           style={{
             backgroundColor: '#ffffff',
@@ -462,9 +441,20 @@ export default function Home() {
             position: 'relative',
           }}
         >
-          {/* 3D Cat Viewer */}
-          <div style={{ borderRadius: '16px', overflow: 'hidden', backgroundColor: '#f8fafc' }}>
-            <PhysiqueModel xp={catLove} />
+          {/* 猫のアイコン表示領域 */}
+          <div
+            style={{
+              height: '120px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: '#f8fafc',
+              borderRadius: '20px',
+              fontSize: '56px',
+              userSelect: 'none',
+            }}
+          >
+            {currentCatStage.emoji}
           </div>
 
           {/* Feed Notification Toast */}
@@ -472,7 +462,7 @@ export default function Home() {
             <div
               style={{
                 position: 'absolute',
-                top: '35%',
+                top: '30%',
                 left: '50%',
                 transform: 'translate(-50%, -50%)',
                 backgroundColor: '#10b981',
@@ -496,7 +486,6 @@ export default function Home() {
               justifyContent: 'space-between',
               alignItems: 'center',
               marginTop: '16px',
-              paddingTop: '12px',
             }}
           >
             <div>
