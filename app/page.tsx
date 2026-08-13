@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { FORGETTING_STAGES, calculateRandomScheduleTime } from '@/lib/scheduler';
 
 type Memo = {
   id: string;
@@ -41,29 +42,30 @@ export default function Home() {
     setLoading(false);
   };
 
-    // 2. Service Worker & Push 初期化（既存の登録情報を自動取得）
-    useEffect(() => {
+  // 2. Service Worker & Push 初期化（既存の登録情報を自動取得）
+  useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
-        navigator.serviceWorker.register('/sw.js').then(async (reg) => {
+      navigator.serviceWorker.register('/sw.js').then(async (reg) => {
         setStatus('READY');
         
-        // 👇 過去に登録された PushSubscription があるか確認
+        // 過去に登録された PushSubscription があるか確認
         const existingSub = await reg.pushManager.getSubscription();
         if (existingSub) {
-            setSubscription(existingSub);
-            setStatus('PUSH ENABLED');
+          setSubscription(existingSub);
+          setStatus('PUSH ENABLED');
         }
-        }).catch(err => setStatus('SW ERROR: ' + err.message));
+      }).catch(err => setStatus('SW ERROR: ' + err.message));
     } else {
-        setStatus('UNSUPPORTED (iOS NEEDS PWA)');
+      setStatus('UNSUPPORTED (iOS NEEDS PWA)');
     }
-    }, []);
+  }, []);
 
-  // 3. メモの追加（Supabaseに保存）
+  // 3. メモの追加（Supabaseに保存 ＋ 忘却曲線スケジュール生成）
   const handleAddMemo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
+    // ① memos テーブルに保存
     const { data, error } = await supabase
       .from('memos')
       .insert([
@@ -77,8 +79,32 @@ export default function Home() {
 
     if (error) {
       alert('保存に失敗しました: ' + error.message);
-    } else if (data) {
-      setMemos([data[0] as Memo, ...memos]);
+      return;
+    }
+
+    if (data && data[0]) {
+      const newMemo = data[0] as Memo;
+
+      // ② 忘却曲線に基づく5段階（1日、3日、7日、14日、30日後）の復習スケジュールデータを生成
+      const scheduleInserts = FORGETTING_STAGES.map((days, index) => ({
+        memo_id: newMemo.id,
+        scheduled_at: calculateRandomScheduleTime(days),
+        stage: index + 1,
+        completed: false,
+      }));
+
+      // ③ schedules テーブルへ一括挿入
+      const { error: scheduleError } = await supabase
+        .from('schedules')
+        .insert(scheduleInserts);
+
+      if (scheduleError) {
+        console.error('スケジュールの登録に失敗しました:', scheduleError);
+      } else {
+        console.log('5段階の復習スケジュールを登録しました！');
+      }
+
+      setMemos([newMemo, ...memos]);
       setTitle('');
       setAnswer('');
     }
@@ -161,7 +187,7 @@ export default function Home() {
         borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
         padding: '12px 24px',
         display: 'flex',
-        justifyContent: 'space-between',
+        justifyInContent: 'space-between',
         alignItems: 'center'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
