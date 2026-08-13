@@ -304,6 +304,23 @@ export default function Home() {
     }
   };
 
+  // 🔄 クイズモードから「忘れた」場合にStage 1へ復元する処理
+  const handleResetScheduleForMemo = async (memoId: string) => {
+    const { error } = await supabase
+      .from('schedules')
+      .update({
+        stage: 1,
+        scheduled_at: new Date().toISOString(),
+        completed: false,
+      })
+      .eq('memo_id', memoId);
+
+    if (!error) {
+      handleReviewReward(false);
+      fetchTodayTasks(); // 復習リストを最新化
+    }
+  };
+
   const toggleReviewAnswer = (scheduleId: string) => {
     setShowAnswerReviewMap((prev) => ({ ...prev, [scheduleId]: !prev[scheduleId] }));
   };
@@ -356,6 +373,19 @@ export default function Home() {
     setQuizIndex(0);
     setShowQuizAnswer(false);
     setIsQuizActive(true);
+  };
+
+  // クイズの「覚えた」選択
+  const handleQuizRemember = () => {
+    handleNextQuiz();
+  };
+
+  // クイズの「忘れた」選択（復習リストに戻す）
+  const handleQuizForgot = async () => {
+    const currentMemo = quizQueue[quizIndex];
+    await handleResetScheduleForMemo(currentMemo.id);
+    alert('この問題を復習リスト(Stage 1)に再登録しました！');
+    handleNextQuiz();
   };
 
   const handleNextQuiz = () => {
@@ -487,7 +517,7 @@ export default function Home() {
 
       {/* Main Content */}
       <main style={{ maxWidth: '480px', margin: '0 auto' }}>
-        {/* ── 🐱 CAT CARD (Simple View) ── */}
+        {/* ── 🐱 CAT CARD ── */}
         <div
           style={{
             backgroundColor: '#ffffff',
@@ -499,7 +529,6 @@ export default function Home() {
             position: 'relative',
           }}
         >
-          {/* 猫のアイコン表示領域 */}
           <div
             style={{
               height: '120px',
@@ -515,7 +544,6 @@ export default function Home() {
             {currentCatStage.emoji}
           </div>
 
-          {/* Feed Notification Toast */}
           {feedEffect && (
             <div
               style={{
@@ -537,15 +565,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* Cat Status */}
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginTop: '16px',
-            }}
-          >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px' }}>
             <div>
               <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>ステータス</div>
               <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
@@ -561,7 +581,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Feed Button */}
           <button
             onClick={handleFeedCat}
             style={{
@@ -582,30 +601,12 @@ export default function Home() {
             ごはんをあげる（1缶消費）
           </button>
 
-          {/* LOVE Gauge Bar */}
           <div style={{ marginTop: '16px' }}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: '11px',
-                fontWeight: 600,
-                color: '#64748b',
-                marginBottom: '6px',
-              }}
-            >
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>
               <span>なつき度 ({catLove} / 1000)</span>
               <span>{Math.floor((catLove / 1000) * 100)}%</span>
             </div>
-            <div
-              style={{
-                width: '100%',
-                height: '8px',
-                backgroundColor: '#f1f5f9',
-                borderRadius: '999px',
-                overflow: 'hidden',
-              }}
-            >
+            <div style={{ width: '100%', height: '8px', backgroundColor: '#f1f5f9', borderRadius: '999px', overflow: 'hidden' }}>
               <div
                 style={{
                   height: '100%',
@@ -641,7 +642,7 @@ export default function Home() {
               key={tab.id}
               onClick={() => {
                 setActiveTab(tab.id as any);
-                setIsQuizActive(false); // タブ切り替え時にクイズ解除
+                setIsQuizActive(false);
               }}
               style={{
                 padding: '10px 0',
@@ -715,9 +716,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* ========================================================= */}
         {/* TAB 1: 復習画面 */}
-        {/* ========================================================= */}
         {activeTab === 'review' && (
           <section>
             {filteredTodayTasks.length === 0 ? (
@@ -861,9 +860,7 @@ export default function Home() {
           </section>
         )}
 
-        {/* ========================================================= */}
         {/* TAB 2: 全メモ一覧画面（検索・シャッフル・演習モード） */}
-        {/* ========================================================= */}
         {activeTab === 'practice' && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {/* 🎮 クイズモード実行中画面 */}
@@ -948,23 +945,60 @@ export default function Home() {
                       </div>
                     )}
 
-                    <button
-                      onClick={handleNextQuiz}
-                      style={{
-                        width: '100%',
-                        padding: '14px',
-                        backgroundColor: '#0f172a',
-                        color: '#ffffff',
-                        border: 'none',
-                        borderRadius: '12px',
-                        fontWeight: 700,
-                        fontSize: '13px',
-                        cursor: 'pointer',
-                        boxShadow: '0 4px 12px rgba(15, 23, 42, 0.15)',
-                      }}
-                    >
-                      {quizIndex + 1 === quizQueue.length ? '演習完了！' : '次の問題へ ➔'}
-                    </button>
+                    {/* 答えを表示した後の判定ボタン */}
+                    {showQuizAnswer ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                        <button
+                          onClick={handleQuizForgot}
+                          style={{
+                            padding: '12px',
+                            backgroundColor: '#fef2f2',
+                            color: '#ef4444',
+                            border: 'none',
+                            borderRadius: '12px',
+                            fontWeight: 700,
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          忘れた (Stage 1へ)
+                        </button>
+                        <button
+                          onClick={handleQuizRemember}
+                          style={{
+                            padding: '12px',
+                            backgroundColor: '#10b981',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '12px',
+                            fontWeight: 700,
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
+                          }}
+                        >
+                          覚えた (次へ ➔)
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={handleNextQuiz}
+                        style={{
+                          width: '100%',
+                          padding: '14px',
+                          backgroundColor: '#0f172a',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '12px',
+                          fontWeight: 700,
+                          fontSize: '13px',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 12px rgba(15, 23, 42, 0.15)',
+                        }}
+                      >
+                        スキップして次へ ➔
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div
@@ -1002,7 +1036,6 @@ export default function Home() {
             ) : (
               /* 通常の一覧表示モード */
               <>
-                {/* 🚀 このタグで復習を開始するボタン */}
                 <button
                   onClick={handleStartQuiz}
                   style={{
@@ -1025,7 +1058,6 @@ export default function Home() {
                   🚀 {selectedTag === 'ALL' ? 'すべての問題' : `#${selectedTag}`} で復習を始める
                 </button>
 
-                {/* 🔍 検索バー & シャッフルボタン */}
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <input
                     type="text"
@@ -1063,7 +1095,6 @@ export default function Home() {
                   </button>
                 </div>
 
-                {/* カード一覧表示 */}
                 {filteredMemos.length === 0 ? (
                   <div
                     style={{
@@ -1163,9 +1194,7 @@ export default function Home() {
           </section>
         )}
 
-        {/* ========================================================= */}
         {/* TAB 3: アナリティクス画面 */}
-        {/* ========================================================= */}
         {activeTab === 'analytics' && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -1221,9 +1250,7 @@ export default function Home() {
           </section>
         )}
 
-        {/* ========================================================= */}
         {/* TAB 4: 作成・管理画面 */}
-        {/* ========================================================= */}
         {activeTab === 'memos' && (
           <section>
             <div
@@ -1325,7 +1352,6 @@ export default function Home() {
                   </div>
                 )}
 
-                {/* タグ入力 ＆ ワンタップ補完 */}
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 600, marginBottom: '6px' }}>
                     タグ（任意）
@@ -1394,7 +1420,6 @@ export default function Home() {
               </form>
             </div>
 
-            {/* 管理リスト */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {memos.map((memo) => (
                 <div
