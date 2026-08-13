@@ -18,31 +18,79 @@ type ReviewTask = {
   memo: Memo;
 };
 
+// フィジークランク定義
+const RANKS = [
+  { name: 'BEGINNER', minXp: 0, icon: '🐣' },
+  { name: 'GYM RAT', minXp: 200, icon: '🏋️' },
+  { name: 'PHYSICAL ATHLETE', minXp: 600, icon: '🥇' },
+  { name: 'PRO ATHLETE', minXp: 1200, icon: '🏆' },
+  { name: 'OLYMPIA CHAMP', minXp: 2500, icon: '👑' },
+];
+
 export default function Home() {
-  // タブ管理 ('review' | 'memos' | 'practice')
   const [activeTab, setActiveTab] = useState<'review' | 'memos' | 'practice'>('review');
 
   const [memos, setMemos] = useState<Memo[]>([]);
   const [todayTasks, setTodayTasks] = useState<ReviewTask[]>([]);
   
-  // アコーディオン開閉状態の管理
+  // アコーディオン開閉状態
   const [showAnswerReviewMap, setShowAnswerReviewMap] = useState<{ [key: string]: boolean }>({});
   const [showAnswerPracticeMap, setShowAnswerPracticeMap] = useState<{ [key: string]: boolean }>({});
 
-  // フォーム用ステート
+  // フォーム用
   const [type, setType] = useState<'question' | 'simple'>('question');
   const [title, setTitle] = useState('');
   const [answer, setAnswer] = useState('');
   const [loading, setLoading] = useState(true);
 
+  // フィジーク＆ゲーム要素（ローカルストレージで保存）
+  const [xp, setXp] = useState<number>(0);
+  const [streak, setStreak] = useState<number>(0);
+  const [lastReviewDate, setLastReviewDate] = useState<string>('');
+
   // Push通知ステート
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [status, setStatus] = useState<string>('INITIALIZING...');
 
-  // 初回起動時データ取得
+  // 初回起動時データ取得 ＆ ゲーミフィケーションステート読み込み
   useEffect(() => {
     fetchData();
+
+    // ローカルストレージからゲーミフィケーションデータの読み込み
+    const savedXp = localStorage.getItem('physique_xp');
+    const savedStreak = localStorage.getItem('physique_streak');
+    const savedLastDate = localStorage.getItem('physique_last_date');
+
+    if (savedXp) setXp(parseInt(savedXp, 10));
+    if (savedStreak) setStreak(parseInt(savedStreak, 10));
+    if (savedLastDate) setLastReviewDate(savedLastDate);
   }, []);
+
+  // XP・ストリークの更新と保存
+  const addXpAndCheckStreak = (amount: number) => {
+    const newXp = xp + amount;
+    setXp(newXp);
+    localStorage.setItem('physique_xp', newXp.toString());
+
+    // 日付の判定（ストリーク更新）
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (lastReviewDate !== todayStr) {
+      const newStreak = streak + 1;
+      setStreak(newStreak);
+      setLastReviewDate(todayStr);
+      localStorage.setItem('physique_streak', newStreak.toString());
+      localStorage.setItem('physique_last_date', todayStr);
+    }
+  };
+
+  // 現在のランク算出
+  const getCurrentRank = () => {
+    let current = RANKS[0];
+    for (const rank of RANKS) {
+      if (xp >= rank.minXp) current = rank;
+    }
+    return current;
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -50,7 +98,6 @@ export default function Home() {
     setLoading(false);
   };
 
-  // 全メモ取得
   const fetchMemos = async () => {
     const { data, error } = await supabase
       .from('memos')
@@ -64,7 +111,6 @@ export default function Home() {
     }
   };
 
-  // 今日の復習タスク取得（重複排除・最新の1枚のみ）
   const fetchTodayTasks = async () => {
     const nowISO = new Date().toISOString();
 
@@ -105,7 +151,6 @@ export default function Home() {
     }
   };
 
-  // Service Worker & Push 初期化
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       navigator.serviceWorker.register('/sw.js').then(async (reg) => {
@@ -121,7 +166,6 @@ export default function Home() {
     }
   }, []);
 
-  // メモ追加 ＆ スケジュール＋QStash予約
   const handleAddMemo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
@@ -180,7 +224,7 @@ export default function Home() {
     }
   };
 
-  // 復習完了処理
+  // 復習完了（完璧！）
   const handleCompleteReview = async (scheduleId: string) => {
     const { error } = await supabase
       .from('schedules')
@@ -191,10 +235,30 @@ export default function Home() {
       alert('更新に失敗しました: ' + error.message);
     } else {
       setTodayTasks(todayTasks.filter(task => task.schedule_id !== scheduleId));
+      addXpAndCheckStreak(50); // XP+50 獲得！
     }
   };
 
-  // 解答トグル（復習画面用）
+  // 復習リセット（もう一歩・うろ覚え）
+  const handleResetReview = async (task: ReviewTask) => {
+    // Stage 1 にリセットして今日今すぐ再出題
+    const { error } = await supabase
+      .from('schedules')
+      .update({
+        stage: 1,
+        scheduled_at: new Date().toISOString(),
+        completed: false,
+      })
+      .eq('id', task.schedule_id);
+
+    if (error) {
+      alert('更新に失敗しました: ' + error.message);
+    } else {
+      alert('忘却ステージを Stage 1 にリセットしました！もう一度確認しましょう 💪');
+      fetchTodayTasks();
+    }
+  };
+
   const toggleReviewAnswer = (scheduleId: string) => {
     setShowAnswerReviewMap(prev => ({
       ...prev,
@@ -202,7 +266,6 @@ export default function Home() {
     }));
   };
 
-  // 解答トグル（自主復習画面用）
   const togglePracticeAnswer = (memoId: string) => {
     setShowAnswerPracticeMap(prev => ({
       ...prev,
@@ -210,7 +273,6 @@ export default function Home() {
     }));
   };
 
-  // メモ削除
   const handleDeleteMemo = async (id: string) => {
     if (!confirm('本当に削除しますか？')) return;
 
@@ -223,7 +285,6 @@ export default function Home() {
     }
   };
 
-  // 通知許可
   const handleSubscribe = async () => {
     try {
       const permission = await Notification.requestPermission();
@@ -245,7 +306,6 @@ export default function Home() {
     }
   };
 
-  // 10秒後テスト通知
   const handleSchedulePush = async (memo: Memo) => {
     if (!subscription) {
       alert('先に画面上部の「NOTIFICATION ENABLE」を押してください');
@@ -272,6 +332,8 @@ export default function Home() {
       alert('予約に失敗しました');
     }
   };
+
+  const currentRank = getCurrentRank();
 
   return (
     <div style={{ backgroundColor: '#090d16', color: '#f3f4f6', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
@@ -323,7 +385,49 @@ export default function Home() {
       </header>
 
       {/* Main Content */}
-      <main style={{ maxWidth: '640px', margin: '0 auto', padding: '24px 16px 80px 16px' }}>
+      <main style={{ maxWidth: '640px', margin: '0 auto', padding: '20px 16px 80px 16px' }}>
+
+        {/* 🏆 フィジークステータス＆レベルボード */}
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.1) 0%, rgba(17, 24, 39, 0.8) 100%)',
+          border: '1px solid rgba(0, 242, 254, 0.3)',
+          borderRadius: '20px',
+          padding: '16px 20px',
+          marginBottom: '20px',
+          backdropFilter: 'blur(12px)',
+          boxShadow: '0 8px 24px rgba(0, 242, 254, 0.15)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '24px' }}>{currentRank.icon}</span>
+              <div>
+                <span style={{ fontSize: '10px', color: '#00f2fe', fontWeight: 800, letterSpacing: '0.1em' }}>PHYSIQUE RANK</span>
+                <div style={{ fontSize: '16px', fontWeight: 800, color: '#ffffff' }}>{currentRank.name}</div>
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <span style={{ fontSize: '10px', color: '#ffb703', fontWeight: 800, letterSpacing: '0.1em' }}>STREAK</span>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: '#ffb703' }}>🔥 {streak} 日連続</div>
+            </div>
+          </div>
+
+          {/* XP ゲージ */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#9ca3af', marginBottom: '4px', fontWeight: 600 }}>
+              <span>XP: {xp} PTS</span>
+              <span>NEXT RANK</span>
+            </div>
+            <div style={{ width: '100%', height: '8px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                width: `${Math.min(100, (xp / 2500) * 100)}%`,
+                background: 'linear-gradient(90deg, #00f2fe 0%, #4facfe 100%)',
+                borderRadius: '4px',
+                transition: 'width 0.4s ease'
+              }}></div>
+            </div>
+          </div>
+        </div>
 
         {/* 🗂️ タブナビゲーション */}
         <div style={{
@@ -334,7 +438,7 @@ export default function Home() {
           padding: '6px',
           borderRadius: '16px',
           border: '1px solid rgba(255, 255, 255, 0.08)',
-          marginBottom: '28px',
+          marginBottom: '24px',
           backdropFilter: 'blur(12px)'
         }}>
           <button
@@ -394,20 +498,20 @@ export default function Home() {
 
 
         {/* ========================================================= */}
-        {/* TAB 1: 🔥 今日の復習画面 (エビングハウスの忘却曲線に基づく) */}
+        {/* TAB 1: 🔥 今日の復習画面 */}
         {/* ========================================================= */}
         {activeTab === 'review' && (
           <section>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
-                <h2 style={{ fontSize: '20px', fontWeight: 800, margin: 0, color: '#00f2fe' }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 800, margin: 0, color: '#00f2fe' }}>
                   TODAY'S REVIEW
                 </h2>
-                <p style={{ fontSize: '12px', color: '#6b7280', margin: '4px 0 0 0' }}>
-                  忘却曲線のタイミングが到来した復習カード
+                <p style={{ fontSize: '12px', color: '#6b7280', margin: '2px 0 0 0' }}>
+                  今すぐパンプ（定着）させるべき復習カード
                 </p>
               </div>
-              <span style={{ fontSize: '12px', fontWeight: 700, color: '#00f2fe', background: 'rgba(0, 242, 254, 0.1)', border: '1px solid rgba(0, 242, 254, 0.3)', padding: '4px 12px', borderRadius: '12px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: '#00f2fe', background: 'rgba(0, 242, 254, 0.1)', border: '1px solid rgba(0, 242, 254, 0.3)', padding: '4px 10px', borderRadius: '12px' }}>
                 {todayTasks.length} TASKS
               </span>
             </div>
@@ -421,9 +525,9 @@ export default function Home() {
                 borderRadius: '20px',
                 color: '#9ca3af'
               }}>
-                <div style={{ fontSize: '32px', marginBottom: '12px' }}>🎉</div>
-                <div style={{ fontWeight: 700, color: '#f3f4f6', marginBottom: '4px' }}>復習完了！</div>
-                <div style={{ fontSize: '13px' }}>現在、復習が必要なカードはありません。完璧です！</div>
+                <div style={{ fontSize: '36px', marginBottom: '12px' }}>🎉</div>
+                <div style={{ fontWeight: 800, color: '#f3f4f6', fontSize: '16px', marginBottom: '4px' }}>本日のトレーニング完了！</div>
+                <div style={{ fontSize: '13px' }}>すべての復習をクリアしました。筋肉（記憶）が育っています！</div>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -486,23 +590,41 @@ export default function Home() {
                       </div>
                     )}
 
-                    <button
-                      onClick={() => handleCompleteReview(task.schedule_id)}
-                      style={{
-                        width: '100%',
-                        padding: '12px',
-                        background: 'linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)',
-                        color: '#090d16',
-                        border: 'none',
-                        borderRadius: '12px',
-                        fontWeight: 800,
-                        fontSize: '14px',
-                        cursor: 'pointer',
-                        boxShadow: '0 4px 15px rgba(0, 242, 254, 0.3)'
-                      }}
-                    >
-                      ✨ 覚えた！（復習完了）
-                    </button>
+                    {/* 2択フィードバックボタン */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <button
+                        onClick={() => handleResetReview(task)}
+                        style={{
+                          padding: '12px',
+                          background: 'rgba(239, 68, 68, 0.15)',
+                          color: '#f87171',
+                          border: '1px solid rgba(239, 68, 68, 0.3)',
+                          borderRadius: '12px',
+                          fontWeight: 700,
+                          fontSize: '13px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        💦 もう一歩
+                      </button>
+
+                      <button
+                        onClick={() => handleCompleteReview(task.schedule_id)}
+                        style={{
+                          padding: '12px',
+                          background: 'linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)',
+                          color: '#090d16',
+                          border: 'none',
+                          borderRadius: '12px',
+                          fontWeight: 800,
+                          fontSize: '13px',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 15px rgba(0, 242, 254, 0.3)'
+                        }}
+                      >
+                        ✨ 完璧！ (+50XP)
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -512,20 +634,20 @@ export default function Home() {
 
 
         {/* ========================================================= */}
-        {/* TAB 2: 🧠 全メモ自主復習画面 (忘却曲線に関係なくいつでも復習) */}
+        {/* TAB 2: 🧠 全メモ自主復習画面 */}
         {/* ========================================================= */}
         {activeTab === 'practice' && (
           <section>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
-                <h2 style={{ fontSize: '20px', fontWeight: 800, margin: 0, color: '#f3f4f6' }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 800, margin: 0, color: '#f3f4f6' }}>
                   ALL PRACTICE
                 </h2>
-                <p style={{ fontSize: '12px', color: '#6b7280', margin: '4px 0 0 0' }}>
-                  いつでも自由に行える自主トレーニング
+                <p style={{ fontSize: '12px', color: '#6b7280', margin: '2px 0 0 0' }}>
+                  いつでも行える自由自主トレーニング
                 </p>
               </div>
-              <span style={{ fontSize: '12px', color: '#6b7280', background: 'rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '10px' }}>
+              <span style={{ fontSize: '11px', color: '#6b7280', background: 'rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '10px' }}>
                 {memos.length} CARDS
               </span>
             </div>
@@ -629,7 +751,6 @@ export default function Home() {
         {/* ========================================================= */}
         {activeTab === 'memos' && (
           <section>
-            {/* 新規作成フォーム */}
             <div style={{
               background: 'rgba(17, 24, 39, 0.7)',
               backdropFilter: 'blur(16px)',
@@ -687,7 +808,7 @@ export default function Home() {
                     type="text"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder={type === 'question' ? '例: アナボリックとは？' : '例: 今日のメモ'}
+                    placeholder={type === 'question' ? '例: 大胸筋上部を狙う種目は？' : '例: 今日のメモ'}
                     required
                     style={{
                       width: '100%',
@@ -710,7 +831,7 @@ export default function Home() {
                     <textarea
                       value={answer}
                       onChange={(e) => setAnswer(e.target.value)}
-                      placeholder="例: 同化作用。物質を合成して組織を作るプロセスのこと。"
+                      placeholder="例: インクライン・ベンチプレス"
                       rows={3}
                       style={{
                         width: '100%',
@@ -745,7 +866,6 @@ export default function Home() {
               </form>
             </div>
 
-            {/* 管理用カードリスト */}
             <div>
               <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '16px', color: '#e5e7eb' }}>
                 登録済みカードの管理
