@@ -19,7 +19,7 @@ export async function POST(req: Request) {
     // 現在のホスト名を取得（ローカルまたはVercel本番のURL）
     const host = req.headers.get('host');
     const protocol = host?.includes('localhost') ? 'http' : 'https';
-    const destinationUrl = `${protocol}://${host}/api/qstash/push`;
+    const destinationUrl = `${protocol}://${host}/api/qstash`;
 
     // QStashに遅延タスク（Push通知の配信）を登録！
     const result = await qstashClient.publishJSON({
