@@ -127,6 +127,41 @@ export default function Home() {
     localStorage.setItem('cat_debt', debt.toString());
   }, [coins, catLove, isSick, debt]);
 
+  // 🔄 ゲーム状態の初期化（リセット）処理
+  const handleResetGameState = () => {
+    if (!confirm('本当にゲームの状態（コイン、なつき度、学習記録など）を初期化しますか？')) {
+      return;
+    }
+
+    // ローカルストレージのデータを削除
+    localStorage.removeItem('cat_coins');
+    localStorage.removeItem('cat_love');
+    localStorage.removeItem('physique_streak');
+    localStorage.removeItem('physique_last_date');
+    localStorage.removeItem('physique_total_completed');
+    localStorage.removeItem('physique_total_reset');
+    localStorage.removeItem('physique_activity_log');
+    localStorage.removeItem('target_title');
+    localStorage.removeItem('target_date');
+    localStorage.removeItem('cat_is_sick');
+    localStorage.removeItem('cat_debt');
+
+    // ステートを初期値にリセット
+    setCoins(0);
+    setCatLove(0);
+    setStreak(0);
+    setLastReviewDate('');
+    setTotalCompleted(0);
+    setTotalReset(0);
+    setActivityLog({});
+    setTargetTitle('AWS 12冠 / 試験');
+    setTargetDate('');
+    setIsSick(false);
+    setDebt(0);
+
+    alert('ゲームの状態を初期化しました。');
+  };
+
   // 🏥 病院に連れていく / 借金発生ロジック
   const handleVisitHospital = () => {
     const treatmentCost = 300;
@@ -136,7 +171,6 @@ export default function Home() {
       setFeedEffect('病院で治療してもらった！ 🏥');
       setTimeout(() => setFeedEffect(null), 2500);
     } else {
-      // お金がないので借金して治療
       const newDebt = debt + treatmentCost;
       setCoins(0);
       setDebt(newDebt);
@@ -182,11 +216,10 @@ export default function Home() {
     const todayStr = new Date().toISOString().split('T')[0];
 
     if (isSuccess) {
-      let earnedCoins = 50; // 基本獲得コイン
+      let earnedCoins = 50;
 
-      // 💡 借金がある場合、稼いだコインの半分（または一部）が自動で借金返済に回る！
       if (debt > 0) {
-        const repayAmount = Math.min(debt, 25); // 1問クリアごとに25Gずつ自動返済
+        const repayAmount = Math.min(debt, 25);
         setDebt(debt - repayAmount);
         earnedCoins -= repayAmount;
         setFeedEffect(`復習成功！ 借金を ${repayAmount}G 返済しました！ 📜`);
@@ -200,7 +233,6 @@ export default function Home() {
       setTotalCompleted(newComp);
       localStorage.setItem('physique_total_completed', newComp.toString());
 
-      // ランダムでたまに病気になるイベント（例：10%の確率）
       if (!isSick && Math.random() < 0.1) {
         setIsSick(true);
       }
@@ -231,7 +263,6 @@ export default function Home() {
     return current;
   };
 
-  // 🎯 残り日数の計算
   const getRemainingDays = () => {
     if (!targetDate) return null;
     const target = new Date(targetDate);
@@ -1949,7 +1980,7 @@ export default function Home() {
 
         {/* ── TAB 6: 目標設定画面 ── */}
         {activeTab === 'settings' && (
-          <section>
+          <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div
               style={{
                 backgroundColor: '#ffffff',
@@ -2028,6 +2059,40 @@ export default function Home() {
                   💡 復習を完了して借金を自動返済し、猫ちゃんを万全の状態で育て上げましょう！
                 </div>
               </div>
+            </div>
+
+            {/* 🔄 リセット用のセクション */}
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '20px',
+                padding: '20px',
+                boxShadow: '0 10px 20px -5px rgba(0,0,0,0.03)',
+                border: '1px solid #ffeeef',
+              }}
+            >
+              <h2 style={{ fontSize: '14px', fontWeight: 700, marginTop: 0, marginBottom: '8px', color: '#ef4444' }}>
+                データのリセット
+              </h2>
+              <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '14px', lineHeight: '1.5' }}>
+                コイン、なつき度、学習ログ、連続日数、借金・病気状態、目標設定をすべて初期状態に戻します。
+              </p>
+              <button
+                onClick={handleResetGameState}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  backgroundColor: '#fef2f2',
+                  color: '#ef4444',
+                  border: '1px solid #fca5a5',
+                  borderRadius: '12px',
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                }}
+              >
+                ゲーム状態を初期化する
+              </button>
             </div>
           </section>
         )}
