@@ -46,13 +46,14 @@ export default function Home() {
   const [isQuizActive, setIsQuizActive] = useState<boolean>(false);
   const [quizQueue, setQuizQueue] = useState<Memo[]>([]);
   const [quizIndex, setQuizIndex] = useState<number>(0);
-  const [showQuizAnswer, setShowQuizAnswer] = useState<boolean>(false);
+
+  // 回答表示トグル用ステート
+  const [showCurrentAnswer, setShowCurrentAnswer] = useState<boolean>(false);
 
   // iPhone横スワイプ検知用
   const [touchStartX, setTouchStartX] = useState<number>(0);
 
-  // アコーディオン開閉状態
-  const [showAnswerReviewMap, setShowAnswerReviewMap] = useState<{ [key: string]: boolean }>({});
+  // アコーディオン開閉状態 (一覧表示用)
   const [showAnswerPracticeMap, setShowAnswerPracticeMap] = useState<{ [key: string]: boolean }>({});
 
   // フォーム用
@@ -280,6 +281,7 @@ export default function Home() {
 
   // 復習の完了処理（1問完了時）
   const handleCompleteReview = async (scheduleId: string) => {
+    setShowCurrentAnswer(false);
     const { error } = await supabase
       .from('schedules')
       .update({ completed: true })
@@ -295,8 +297,9 @@ export default function Home() {
     }
   };
 
-  // 復習のリセット処理
+  // 復習のリセット処理（忘れた場合）
   const handleResetReview = async (task: ReviewTask) => {
+    setShowCurrentAnswer(false);
     const { error } = await supabase
       .from('schedules')
       .update({
@@ -307,13 +310,13 @@ export default function Home() {
       .eq('id', task.schedule_id);
 
     if (!error) {
-      alert('ステージ1にリセットしました');
       handleReviewReward(false);
       fetchTodayTasks();
     }
   };
 
   const handleResetScheduleForMemo = async (memoId: string) => {
+    setShowCurrentAnswer(false);
     const { error } = await supabase
       .from('schedules')
       .update({
@@ -327,10 +330,6 @@ export default function Home() {
       handleReviewReward(false);
       fetchTodayTasks();
     }
-  };
-
-  const toggleReviewAnswer = (scheduleId: string) => {
-    setShowAnswerReviewMap((prev) => ({ ...prev, [scheduleId]: !prev[scheduleId] }));
   };
 
   const togglePracticeAnswer = (memoId: string) => {
@@ -378,60 +377,54 @@ export default function Home() {
     const queue = isShuffled ? [...targetMemos].sort(() => Math.random() - 0.5) : targetMemos;
     setQuizQueue(queue);
     setQuizIndex(0);
-    setShowQuizAnswer(false);
+    setShowCurrentAnswer(false);
     setIsQuizActive(true);
   };
 
   const handleQuizRemember = () => {
-    handleNextQuiz();
+    setShowCurrentAnswer(false);
+    if (quizIndex < quizQueue.length - 1) {
+      setQuizIndex((prev) => prev + 1);
+    } else {
+      setQuizIndex(quizQueue.length); // 完了
+    }
   };
 
   const handleQuizForgot = async () => {
     const currentMemo = quizQueue[quizIndex];
     await handleResetScheduleForMemo(currentMemo.id);
-    alert('この問題を復習リスト(Stage 1)に再登録しました！');
-    handleNextQuiz();
-  };
-
-  const handleNextQuiz = () => {
-    setShowQuizAnswer(false);
     if (quizIndex < quizQueue.length - 1) {
       setQuizIndex((prev) => prev + 1);
     } else {
-      setQuizIndex(quizQueue.length); // 完了画面へ
+      setQuizIndex(quizQueue.length);
     }
   };
 
-  const handlePrevQuiz = () => {
-    if (quizIndex > 0) {
-      setShowQuizAnswer(false);
-      setQuizIndex((prev) => prev - 1);
-    }
-  };
-
-  // 📱 スマホ用スワイプ処理ハンドラー
+  // 📱 スマホ用スワイプ処理ハンドラー（右＝覚えた / 左＝忘れた）
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStartX(e.touches[0].clientX);
   };
 
-  const handleTouchEnd = (e: React.TouchEvent, type: 'review' | 'quiz', maxLen: number) => {
+  const handleTouchEnd = (e: React.TouchEvent, mode: 'review' | 'quiz') => {
     const touchEndX = e.changedTouches[0].clientX;
     const diff = touchStartX - touchEndX;
     const threshold = 50; // スワイプ検知閾値 (px)
 
     if (diff > threshold) {
-      // 左スワイプ -> 次へ
-      if (type === 'review') {
-        if (reviewIndex < maxLen - 1) setReviewIndex((prev) => prev + 1);
+      // 👈 左向きスワイプ（忘れた）
+      if (mode === 'review') {
+        const task = filteredTodayTasks[Math.min(reviewIndex, filteredTodayTasks.length - 1)];
+        if (task) handleResetReview(task);
       } else {
-        if (quizIndex < maxLen - 1) handleNextQuiz();
+        handleQuizForgot();
       }
     } else if (diff < -threshold) {
-      // 右スワイプ -> 前へ
-      if (type === 'review') {
-        if (reviewIndex > 0) setReviewIndex((prev) => prev - 1);
+      // 👉 右向きスワイプ（覚えた）
+      if (mode === 'review') {
+        const task = filteredTodayTasks[Math.min(reviewIndex, filteredTodayTasks.length - 1)];
+        if (task) handleCompleteReview(task.schedule_id);
       } else {
-        if (quizIndex > 0) handlePrevQuiz();
+        handleQuizRemember();
       }
     }
   };
@@ -686,6 +679,7 @@ export default function Home() {
                 setActiveTab(tab.id as any);
                 setIsQuizActive(false);
                 setReviewIndex(0);
+                setShowCurrentAnswer(false);
               }}
               style={{
                 padding: '10px 0',
@@ -765,7 +759,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── TAB 1: 復習画面（1問集中＋スワイプ対応） ── */}
+        {/* ── TAB 1: 復習画面（1問集中＋タップ回答＋ジェスチャー操作） ── */}
         {activeTab === 'review' && (
           <section>
             {filteredTodayTasks.length === 0 ? (
@@ -787,10 +781,9 @@ export default function Home() {
             ) : (
               <div
                 onTouchStart={handleTouchStart}
-                onTouchEnd={(e) => handleTouchEnd(e, 'review', filteredTodayTasks.length)}
+                onTouchEnd={(e) => handleTouchEnd(e, 'review')}
                 style={{ touchAction: 'pan-y' }}
               >
-                {/* 1問のみ表示 */}
                 {(() => {
                   const task = filteredTodayTasks[Math.min(reviewIndex, filteredTodayTasks.length - 1)];
                   if (!task) return null;
@@ -803,8 +796,10 @@ export default function Home() {
                         padding: '20px',
                         boxShadow: '0 10px 20px -5px rgba(0,0,0,0.03)',
                         border: '1px solid #f1f5f9',
+                        userSelect: 'none',
                       }}
                     >
+                      {/* ステータスバー */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                         <span
                           style={{
@@ -816,7 +811,7 @@ export default function Home() {
                             borderRadius: '12px',
                           }}
                         >
-                          問題 {reviewIndex + 1} / {filteredTodayTasks.length} (STAGE {task.stage})
+                          残り {filteredTodayTasks.length} 問 (STAGE {task.stage})
                         </span>
                         {task.memo.tag && (
                           <span
@@ -835,49 +830,57 @@ export default function Home() {
                         )}
                       </div>
 
-                      <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 16px 0', color: '#0f172a', lineHeight: '1.5' }}>
-                        {task.memo.title}
-                      </h3>
-
-                      {task.memo.type === 'question' && task.memo.answer && (
-                        <div style={{ marginBottom: '16px' }}>
-                          {showAnswerReviewMap[task.schedule_id] ? (
-                            <div
-                              style={{
-                                backgroundColor: '#f8fafc',
-                                padding: '12px 16px',
-                                borderRadius: '12px',
-                                fontSize: '13px',
-                                color: '#334155',
-                                lineHeight: 1.6,
-                                borderLeft: '4px solid #10b981',
-                              }}
-                            >
-                              {task.memo.answer}
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => toggleReviewAnswer(task.schedule_id)}
-                              style={{
-                                width: '100%',
-                                padding: '10px',
-                                backgroundColor: '#f1f5f9',
-                                border: 'none',
-                                borderRadius: '12px',
-                                color: '#475569',
-                                fontSize: '12px',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              答えを表示する
-                            </button>
-                          )}
+                      {/* タップ可能カード本体 */}
+                      <div
+                        onClick={() => setShowCurrentAnswer(!showCurrentAnswer)}
+                        style={{
+                          backgroundColor: '#f8fafc',
+                          borderRadius: '16px',
+                          padding: '20px',
+                          cursor: 'pointer',
+                          minHeight: '160px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          textAlign: 'center',
+                          border: '1px dashed #cbd5e1',
+                          marginBottom: '16px',
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', lineHeight: '1.5' }}>
+                          {task.memo.title}
                         </div>
-                      )}
 
-                      {/* 評価ボタン */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
+                        {task.memo.type === 'question' && task.memo.answer && (
+                          <div style={{ marginTop: '16px', width: '100%' }}>
+                            {showCurrentAnswer ? (
+                              <div
+                                style={{
+                                  backgroundColor: '#ffffff',
+                                  padding: '12px 16px',
+                                  borderRadius: '12px',
+                                  fontSize: '13px',
+                                  color: '#10b981',
+                                  fontWeight: 700,
+                                  lineHeight: 1.6,
+                                  boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                                }}
+                              >
+                                {task.memo.answer}
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>
+                                👆 タップして回答を表示
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* ガイド＆ボタン操作 */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                         <button
                           onClick={() => handleResetReview(task)}
                           style={{
@@ -891,7 +894,7 @@ export default function Home() {
                             cursor: 'pointer',
                           }}
                         >
-                          忘れた (Stage 1)
+                          👈 忘れた (左スワイプ)
                         </button>
 
                         <button
@@ -908,45 +911,7 @@ export default function Home() {
                             boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
                           }}
                         >
-                          覚えた (+1 🐟)
-                        </button>
-                      </div>
-
-                      {/* 前へ / 次に進む ナビゲーション */}
-                      <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid #f1f5f9', paddingTop: '12px' }}>
-                        <button
-                          disabled={reviewIndex === 0}
-                          onClick={() => setReviewIndex((prev) => Math.max(0, prev - 1))}
-                          style={{
-                            flex: 1,
-                            padding: '10px',
-                            backgroundColor: reviewIndex === 0 ? '#f1f5f9' : '#e2e8f0',
-                            color: reviewIndex === 0 ? '#cbd5e1' : '#475569',
-                            border: 'none',
-                            borderRadius: '10px',
-                            fontWeight: 700,
-                            fontSize: '12px',
-                            cursor: reviewIndex === 0 ? 'not-allowed' : 'pointer',
-                          }}
-                        >
-                          前へ
-                        </button>
-                        <button
-                          disabled={reviewIndex >= filteredTodayTasks.length - 1}
-                          onClick={() => setReviewIndex((prev) => Math.min(filteredTodayTasks.length - 1, prev + 1))}
-                          style={{
-                            flex: 1,
-                            padding: '10px',
-                            backgroundColor: reviewIndex >= filteredTodayTasks.length - 1 ? '#f1f5f9' : '#0f172a',
-                            color: reviewIndex >= filteredTodayTasks.length - 1 ? '#cbd5e1' : '#ffffff',
-                            border: 'none',
-                            borderRadius: '10px',
-                            fontWeight: 700,
-                            fontSize: '12px',
-                            cursor: reviewIndex >= filteredTodayTasks.length - 1 ? 'not-allowed' : 'pointer',
-                          }}
-                        >
-                          次に進む ➔
+                          覚えた (右スワイプ 👉)
                         </button>
                       </div>
                     </div>
@@ -957,14 +922,14 @@ export default function Home() {
           </section>
         )}
 
-        {/* ── TAB 2: 全メモ一覧画面（一覧表示 ➔ 復習モードで1問集中） ── */}
+        {/* ── TAB 2: 全メモ一覧画面（一覧 ➔ 一問一答演習） ── */}
         {activeTab === 'practice' && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* 🎮 一問集中の復習モード実行中画面 */}
+            {/* 🎮 一問集中の演習モード画面 */}
             {isQuizActive ? (
               <div
                 onTouchStart={handleTouchStart}
-                onTouchEnd={(e) => handleTouchEnd(e, 'quiz', quizQueue.length)}
+                onTouchEnd={(e) => handleTouchEnd(e, 'quiz')}
                 style={{ touchAction: 'pan-y' }}
               >
                 {quizIndex < quizQueue.length ? (
@@ -975,6 +940,7 @@ export default function Home() {
                       padding: '20px',
                       boxShadow: '0 10px 20px -5px rgba(0,0,0,0.03)',
                       border: '1px solid #f1f5f9',
+                      userSelect: 'none',
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
@@ -1005,120 +971,89 @@ export default function Home() {
                       </button>
                     </div>
 
-                    <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 16px 0', color: '#0f172a', lineHeight: '1.5' }}>
-                      {quizQueue[quizIndex].title}
-                    </h3>
+                    {/* タップ可能カード本体 */}
+                    <div
+                      onClick={() => setShowCurrentAnswer(!showCurrentAnswer)}
+                      style={{
+                        backgroundColor: '#f8fafc',
+                        borderRadius: '16px',
+                        padding: '20px',
+                        cursor: 'pointer',
+                        minHeight: '160px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        textAlign: 'center',
+                        border: '1px dashed #cbd5e1',
+                        marginBottom: '16px',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', lineHeight: '1.5' }}>
+                        {quizQueue[quizIndex].title}
+                      </div>
 
-                    {quizQueue[quizIndex].type === 'question' && quizQueue[quizIndex].answer && (
-                      <div style={{ marginBottom: '16px' }}>
-                        {showQuizAnswer ? (
-                          <div
-                            style={{
-                              backgroundColor: '#f8fafc',
-                              padding: '12px 16px',
-                              borderRadius: '12px',
-                              fontSize: '13px',
-                              color: '#334155',
-                              lineHeight: 1.6,
-                              borderLeft: '4px solid #3b82f6',
-                            }}
-                          >
-                            {quizQueue[quizIndex].answer}
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setShowQuizAnswer(true)}
-                            style={{
-                              width: '100%',
-                              padding: '12px',
-                              backgroundColor: '#f1f5f9',
-                              border: 'none',
-                              borderRadius: '12px',
-                              color: '#475569',
-                              fontSize: '12px',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            答えを表示する
-                          </button>
-                        )}
-                      </div>
-                    )}
+                      {quizQueue[quizIndex].type === 'question' && quizQueue[quizIndex].answer && (
+                        <div style={{ marginTop: '16px', width: '100%' }}>
+                          {showCurrentAnswer ? (
+                            <div
+                              style={{
+                                backgroundColor: '#ffffff',
+                                padding: '12px 16px',
+                                borderRadius: '12px',
+                                fontSize: '13px',
+                                color: '#3b82f6',
+                                fontWeight: 700,
+                                lineHeight: 1.6,
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                              }}
+                            >
+                              {quizQueue[quizIndex].answer}
+                            </div>
+                          ) : (
+                            <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>
+                              👆 タップして回答を表示
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
-                    {/* 判定・ナビゲーションボタン */}
-                    {showQuizAnswer ? (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                        <button
-                          onClick={handleQuizForgot}
-                          style={{
-                            padding: '12px',
-                            backgroundColor: '#fef2f2',
-                            color: '#ef4444',
-                            border: 'none',
-                            borderRadius: '12px',
-                            fontWeight: 700,
-                            fontSize: '12px',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          忘れた (Stage 1へ)
-                        </button>
-                        <button
-                          onClick={handleQuizRemember}
-                          style={{
-                            padding: '12px',
-                            backgroundColor: '#10b981',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: '12px',
-                            fontWeight: 700,
-                            fontSize: '12px',
-                            cursor: 'pointer',
-                            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
-                          }}
-                        >
-                          覚えた (次へ ➔)
-                        </button>
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                          disabled={quizIndex === 0}
-                          onClick={handlePrevQuiz}
-                          style={{
-                            flex: 1,
-                            padding: '12px',
-                            backgroundColor: quizIndex === 0 ? '#f1f5f9' : '#e2e8f0',
-                            color: quizIndex === 0 ? '#cbd5e1' : '#475569',
-                            border: 'none',
-                            borderRadius: '12px',
-                            fontWeight: 700,
-                            fontSize: '12px',
-                            cursor: quizIndex === 0 ? 'not-allowed' : 'pointer',
-                          }}
-                        >
-                          前へ
-                        </button>
-                        <button
-                          onClick={handleNextQuiz}
-                          style={{
-                            flex: 2,
-                            padding: '12px',
-                            backgroundColor: '#0f172a',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: '12px',
-                            fontWeight: 700,
-                            fontSize: '12px',
-                            cursor: 'pointer',
-                            boxShadow: '0 4px 12px rgba(15, 23, 42, 0.15)',
-                          }}
-                        >
-                          次に進む ➔
-                        </button>
-                      </div>
-                    )}
+                    {/* 操作ボタン */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                      <button
+                        onClick={handleQuizForgot}
+                        style={{
+                          padding: '12px',
+                          backgroundColor: '#fef2f2',
+                          color: '#ef4444',
+                          border: 'none',
+                          borderRadius: '12px',
+                          fontWeight: 700,
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        👈 忘れた (左スワイプ)
+                      </button>
+                      <button
+                        onClick={handleQuizRemember}
+                        style={{
+                          padding: '12px',
+                          backgroundColor: '#10b981',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '12px',
+                          fontWeight: 700,
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
+                        }}
+                      >
+                        覚えた (右スワイプ 👉)
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div
@@ -1154,7 +1089,7 @@ export default function Home() {
                 )}
               </div>
             ) : (
-              /* 通常の一覧表示モード（一覧段階では全問表示） */
+              /* 通常の一覧表示モード */
               <>
                 <button
                   onClick={handleStartQuiz}
