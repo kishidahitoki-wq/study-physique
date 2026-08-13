@@ -29,7 +29,7 @@ const CAT_STAGES = [
 ];
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'review' | 'memos' | 'practice' | 'analytics' | 'settings'>('review');
+  const [activeTab, setActiveTab] = useState<'review' | 'shop' | 'practice' | 'analytics' | 'memos' | 'settings'>('review');
 
   const [memos, setMemos] = useState<Memo[]>([]);
   const [todayTasks, setTodayTasks] = useState<ReviewTask[]>([]);
@@ -42,9 +42,8 @@ export default function Home() {
   // 🎯 目標設定用ステート
   const [targetTitle, setTargetTitle] = useState<string>('AWS 12冠 / 試験');
   const [targetDate, setTargetDate] = useState<string>('');
-  const [isEditingTarget, setIsEditingTarget] = useState<boolean>(false);
 
-  // 💰 お金（コイン）と育成ステート
+  // 💰 お金（コイン）、育成、病気・借金ステート
   const [coins, setCoins] = useState<number>(0);
   const [catLove, setCatLove] = useState<number>(0);
   const [streak, setStreak] = useState<number>(0);
@@ -53,6 +52,10 @@ export default function Home() {
   const [totalReset, setTotalReset] = useState<number>(0);
   const [activityLog, setActivityLog] = useState<{ [date: string]: number }>({});
   const [feedEffect, setFeedEffect] = useState<string | null>(null);
+
+  // 🏥 病気 & 借金ステート
+  const [isSick, setIsSick] = useState<boolean>(false);
+  const [debt, setDebt] = useState<number>(0);
 
   // 🔄 復習(review)モード用インデックス
   const [reviewIndex, setReviewIndex] = useState<number>(0);
@@ -100,6 +103,8 @@ export default function Home() {
     const savedLog = localStorage.getItem('physique_activity_log');
     const savedTargetTitle = localStorage.getItem('target_title');
     const savedTargetDate = localStorage.getItem('target_date');
+    const savedIsSick = localStorage.getItem('cat_is_sick');
+    const savedDebt = localStorage.getItem('cat_debt');
 
     if (savedCoins) setCoins(parseInt(savedCoins, 10));
     if (savedLove) setCatLove(parseInt(savedLove, 10));
@@ -110,19 +115,95 @@ export default function Home() {
     if (savedLog) setActivityLog(JSON.parse(savedLog));
     if (savedTargetTitle) setTargetTitle(savedTargetTitle);
     if (savedTargetDate) setTargetDate(savedTargetDate);
+    if (savedIsSick) setIsSick(savedIsSick === 'true');
+    if (savedDebt) setDebt(parseInt(savedDebt, 10));
   }, []);
 
+  // 💾 ストレージ自動保存
+  useEffect(() => {
+    localStorage.setItem('cat_coins', coins.toString());
+    localStorage.setItem('cat_love', catLove.toString());
+    localStorage.setItem('cat_is_sick', isSick.toString());
+    localStorage.setItem('cat_debt', debt.toString());
+  }, [coins, catLove, isSick, debt]);
+
+  // 🏥 病院に連れていく / 借金発生ロジック
+  const handleVisitHospital = () => {
+    const treatmentCost = 300;
+    if (coins >= treatmentCost) {
+      setCoins(coins - treatmentCost);
+      setIsSick(false);
+      setFeedEffect('病院で治療してもらった！ 🏥');
+      setTimeout(() => setFeedEffect(null), 2500);
+    } else {
+      // お金がないので借金して治療
+      const newDebt = debt + treatmentCost;
+      setCoins(0);
+      setDebt(newDebt);
+      setIsSick(false);
+      setFeedEffect(`所持金不足で ${treatmentCost}G の借金をして治療しました… 💸`);
+      setTimeout(() => setFeedEffect(null), 3000);
+    }
+  };
+
+  // 🛒 ショップでのアイテム購入ロジック
+  const handleBuyItem = (itemType: 'food' | 'premium_food' | 'toy') => {
+    let cost = 0;
+    let loveGain = 0;
+    let message = '';
+
+    if (itemType === 'food') {
+      cost = 50;
+      loveGain = 15;
+      message = 'キャットフードをあげた！ (+15 LOVE)';
+    } else if (itemType === 'premium_food') {
+      cost = 150;
+      loveGain = 50;
+      message = '高級缶詰をあげた！大喜び！ (+50 LOVE)';
+    } else if (itemType === 'toy') {
+      cost = 200;
+      loveGain = 30;
+      message = 'おもちゃを買ってあげた！病気リスク軽減！ (+30 LOVE)';
+    }
+
+    if (coins < cost) {
+      alert('コインが足りません！復習をクリアしてコインを稼ぎましょう 🪙');
+      return;
+    }
+
+    setCoins(coins - cost);
+    setCatLove(catLove + loveGain);
+    setFeedEffect(message);
+    setTimeout(() => setFeedEffect(null), 2500);
+  };
+
+  // 🏆 復習成功時の報酬 ＆ 借金自動返済ロジック
   const handleReviewReward = (isSuccess: boolean) => {
     const todayStr = new Date().toISOString().split('T')[0];
 
     if (isSuccess) {
-      const newCoins = coins + 50; // 正解すると50コイン獲得
+      let earnedCoins = 50; // 基本獲得コイン
+
+      // 💡 借金がある場合、稼いだコインの半分（または一部）が自動で借金返済に回る！
+      if (debt > 0) {
+        const repayAmount = Math.min(debt, 25); // 1問クリアごとに25Gずつ自動返済
+        setDebt(debt - repayAmount);
+        earnedCoins -= repayAmount;
+        setFeedEffect(`復習成功！ 借金を ${repayAmount}G 返済しました！ 📜`);
+        setTimeout(() => setFeedEffect(null), 2500);
+      }
+
+      const newCoins = coins + earnedCoins;
       setCoins(newCoins);
-      localStorage.setItem('cat_coins', newCoins.toString());
 
       const newComp = totalCompleted + 1;
       setTotalCompleted(newComp);
       localStorage.setItem('physique_total_completed', newComp.toString());
+
+      // ランダムでたまに病気になるイベント（例：10%の確率）
+      if (!isSick && Math.random() < 0.1) {
+        setIsSick(true);
+      }
     } else {
       const newRes = totalReset + 1;
       setTotalReset(newRes);
@@ -140,25 +221,6 @@ export default function Home() {
       localStorage.setItem('physique_streak', newStreak.toString());
       localStorage.setItem('physique_last_date', todayStr);
     }
-  };
-
-  const handleFeedCat = () => {
-    const cost = 100;
-    if (coins < cost) {
-      alert('コインが足りません！復習を完了してコインを稼ぎましょう 💰');
-      return;
-    }
-
-    const newCoins = coins - cost;
-    const newLove = catLove + 30;
-
-    setCoins(newCoins);
-    setCatLove(newLove);
-    localStorage.setItem('cat_coins', newCoins.toString());
-    localStorage.setItem('cat_love', newLove.toString());
-
-    setFeedEffect('豪華なごはんをあげた！ 🐟 (+30 LOVE)');
-    setTimeout(() => setFeedEffect(null), 2500);
   };
 
   const getCurrentCatStage = () => {
@@ -657,7 +719,7 @@ export default function Home() {
       {/* Main Content */}
       <main style={{ maxWidth: '480px', margin: '0 auto' }}>
         
-        {/* ── 🎯 TARGET COUNTDOWN BANNER (目標設定・残り日数) ── */}
+        {/* ── 🎯 TARGET COUNTDOWN BANNER ── */}
         <div
           style={{
             backgroundColor: '#0f172a',
@@ -695,7 +757,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ── 🐱 CAT CARD ── */}
+        {/* ── 🐱 CAT CARD (WITH SICK & DEBT ALERTS) ── */}
         <div
           style={{
             backgroundColor: '#ffffff',
@@ -703,10 +765,67 @@ export default function Home() {
             padding: '20px',
             marginBottom: '20px',
             boxShadow: '0 20px 25px -5px rgba(0,0,0,0.04), 0 8px 10px -6px rgba(0,0,0,0.02)',
-            border: '1px solid #f1f5f9',
+            border: isSick ? '2px solid #ef4444' : '1px solid #f1f5f9',
             position: 'relative',
           }}
         >
+          {/* 病気アラートバナー */}
+          {isSick && (
+            <div
+              style={{
+                backgroundColor: '#fef2f2',
+                color: '#ef4444',
+                padding: '10px 14px',
+                borderRadius: '14px',
+                fontSize: '12px',
+                fontWeight: 700,
+                marginBottom: '14px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                border: '1px solid #fca5a5',
+              }}
+            >
+              <span>🤒 猫ちゃんが病気にかかっています…！</span>
+              <button
+                onClick={handleVisitHospital}
+                style={{
+                  backgroundColor: '#ef4444',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '6px 12px',
+                  borderRadius: '10px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                病院へ (300G)
+              </button>
+            </div>
+          )}
+
+          {/* 借金アラートバナー */}
+          {debt > 0 && (
+            <div
+              style={{
+                backgroundColor: '#fffbeb',
+                color: '#d97706',
+                padding: '8px 14px',
+                borderRadius: '12px',
+                fontSize: '11px',
+                fontWeight: 700,
+                marginBottom: '14px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                border: '1px solid #fde68a',
+              }}
+            >
+              <span>📜 借金残高: <b>{debt} G</b> (復習クリアで自動返済中)</span>
+            </div>
+          )}
+
           <div
             style={{
               height: '120px',
@@ -719,7 +838,7 @@ export default function Home() {
               userSelect: 'none',
             }}
           >
-            {currentCatStage.emoji}
+            {isSick ? '🤒' : currentCatStage.emoji}
           </div>
 
           {feedEffect && (
@@ -737,6 +856,8 @@ export default function Home() {
                 borderRadius: '20px',
                 boxShadow: '0 10px 20px rgba(16, 185, 129, 0.3)',
                 zIndex: 10,
+                textAlign: 'center',
+                whiteSpace: 'nowrap',
               }}
             >
               {feedEffect}
@@ -746,38 +867,18 @@ export default function Home() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px' }}>
             <div>
               <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>ステータス</div>
-              <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
-                {currentCatStage.name}
+              <div style={{ fontSize: '15px', fontWeight: 800, color: isSick ? '#ef4444' : '#0f172a', marginTop: '2px' }}>
+                {isSick ? '要治療（病気）' : currentCatStage.name}
               </div>
             </div>
 
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>所持コイン（資金）</div>
+              <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>所持コイン</div>
               <div style={{ fontSize: '16px', fontWeight: 800, color: '#f59e0b', marginTop: '2px' }}>
                 🪙 {coins} G
               </div>
             </div>
           </div>
-
-          <button
-            onClick={handleFeedCat}
-            style={{
-              width: '100%',
-              marginTop: '16px',
-              padding: '14px',
-              backgroundColor: coins >= 100 ? '#f59e0b' : '#e2e8f0',
-              color: coins >= 100 ? '#ffffff' : '#94a3b8',
-              border: 'none',
-              borderRadius: '16px',
-              fontWeight: 700,
-              fontSize: '14px',
-              cursor: coins >= 100 ? 'pointer' : 'not-allowed',
-              boxShadow: coins >= 100 ? '0 10px 20px -3px rgba(245, 158, 11, 0.3)' : 'none',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            ごちそうをあげる（100コイン消費）
-          </button>
 
           <div style={{ marginTop: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 600, color: '#64748b', marginBottom: '6px' }}>
@@ -798,12 +899,12 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ── 🗂️ TAB NAVIGATION ── */}
+        {/* ── 🗂️ TAB NAVIGATION (6 TABS) ── */}
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(5, 1fr)',
-            gap: '4px',
+            gridTemplateColumns: 'repeat(6, 1fr)',
+            gap: '3px',
             backgroundColor: '#e2e8f0',
             padding: '4px',
             borderRadius: '16px',
@@ -812,6 +913,7 @@ export default function Home() {
         >
           {[
             { id: 'review', label: `復習(${todayTasks.length})` },
+            { id: 'shop', label: 'お店' },
             { id: 'practice', label: '一覧' },
             { id: 'analytics', label: '記録' },
             { id: 'memos', label: '作成' },
@@ -827,13 +929,13 @@ export default function Home() {
                 setDragOffset({ x: 0, y: 0 });
               }}
               style={{
-                padding: '10px 0',
+                padding: '8px 0',
                 borderRadius: '12px',
                 border: 'none',
                 backgroundColor: activeTab === tab.id ? '#ffffff' : 'transparent',
                 color: activeTab === tab.id ? '#0f172a' : '#64748b',
                 fontWeight: activeTab === tab.id ? 700 : 600,
-                fontSize: '11px',
+                fontSize: '10px',
                 cursor: 'pointer',
                 boxShadow: activeTab === tab.id ? '0 4px 6px -1px rgba(0, 0, 0, 0.05)' : 'none',
                 transition: 'all 0.15s ease',
@@ -921,7 +1023,7 @@ export default function Home() {
                 <div style={{ fontSize: '15px', fontWeight: 700, color: '#10b981', marginBottom: '4px' }}>
                   🎉 すべての復習が完了しました！
                 </div>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>コインを獲得しました。猫を育成しましょう！</div>
+                <div style={{ fontSize: '12px', color: '#64748b' }}>コインを獲得しました。お店でアイテムを買いましょう！</div>
               </div>
             ) : (
               <div>
@@ -1114,7 +1216,143 @@ export default function Home() {
           </section>
         )}
 
-        {/* ── TAB 2: 一覧画面 ── */}
+        {/* ── TAB 2: お店画面 (SHOP) ── */}
+        {activeTab === 'shop' && (
+          <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '20px',
+                padding: '18px',
+                boxShadow: '0 4px 10px rgba(0,0,0,0.02)',
+                border: '1px solid #f1f5f9',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>所持コイン</div>
+                <div style={{ fontSize: '20px', fontWeight: 800, color: '#f59e0b' }}>🪙 {coins} G</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>借金残高</div>
+                <div style={{ fontSize: '20px', fontWeight: 800, color: '#ef4444' }}>📜 {debt} G</div>
+              </div>
+            </div>
+
+            <h3 style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', margin: '8px 0 4px 4px' }}>
+              🐱 にゃんこショップ
+            </h3>
+
+            {/* 商品1: キャットフード */}
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '16px',
+                padding: '16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                boxShadow: '0 4px 10px rgba(0,0,0,0.02)',
+                border: '1px solid #f1f5f9',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>🐟 キャットフード</div>
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>なつき度が少しアップ (+15)</div>
+                <div style={{ fontSize: '12px', fontWeight: 800, color: '#f59e0b', marginTop: '6px' }}>50 🪙</div>
+              </div>
+              <button
+                onClick={() => handleBuyItem('food')}
+                style={{
+                  backgroundColor: coins >= 50 ? '#f59e0b' : '#e2e8f0',
+                  color: coins >= 50 ? '#ffffff' : '#94a3b8',
+                  border: 'none',
+                  padding: '10px 16px',
+                  borderRadius: '12px',
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  cursor: coins >= 50 ? 'pointer' : 'not-allowed',
+                }}
+              >
+                購入する
+              </button>
+            </div>
+
+            {/* 商品2: 高級缶詰 */}
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '16px',
+                padding: '16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                boxShadow: '0 4px 10px rgba(0,0,0,0.02)',
+                border: '1px solid #f1f5f9',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>✨ 高級サーモン缶</div>
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>なつき度が大アップ (+50)</div>
+                <div style={{ fontSize: '12px', fontWeight: 800, color: '#f59e0b', marginTop: '6px' }}>150 🪙</div>
+              </div>
+              <button
+                onClick={() => handleBuyItem('premium_food')}
+                style={{
+                  backgroundColor: coins >= 150 ? '#f59e0b' : '#e2e8f0',
+                  color: coins >= 150 ? '#ffffff' : '#94a3b8',
+                  border: 'none',
+                  padding: '10px 16px',
+                  borderRadius: '12px',
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  cursor: coins >= 150 ? 'pointer' : 'not-allowed',
+                }}
+              >
+                購入する
+              </button>
+            </div>
+
+            {/* 商品3: おもちゃ */}
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '16px',
+                padding: '16px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                boxShadow: '0 4px 10px rgba(0,0,0,0.02)',
+                border: '1px solid #f1f5f9',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>🧶 自動猫じゃらし</div>
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>ごきげんになり病気になりにくくなる (+30)</div>
+                <div style={{ fontSize: '12px', fontWeight: 800, color: '#f59e0b', marginTop: '6px' }}>200 🪙</div>
+              </div>
+              <button
+                onClick={() => handleBuyItem('toy')}
+                style={{
+                  backgroundColor: coins >= 200 ? '#f59e0b' : '#e2e8f0',
+                  color: coins >= 200 ? '#ffffff' : '#94a3b8',
+                  border: 'none',
+                  padding: '10px 16px',
+                  borderRadius: '12px',
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  cursor: coins >= 200 ? 'pointer' : 'not-allowed',
+                }}
+              >
+                購入する
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* ── TAB 3: 一覧画面 ── */}
         {activeTab === 'practice' && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {isQuizActive ? (
@@ -1456,7 +1694,7 @@ export default function Home() {
           </section>
         )}
 
-        {/* ── TAB 3: アナリティクス画面 ── */}
+        {/* ── TAB 4: アナリティクス画面 ── */}
         {activeTab === 'analytics' && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -1470,9 +1708,9 @@ export default function Home() {
               </div>
 
               <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '20px', boxShadow: '0 4px 10px rgba(0,0,0,0.02)' }}>
-                <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>総獲得コイン</div>
-                <div style={{ fontSize: '22px', fontWeight: 800, color: '#f59e0b', marginTop: '4px' }}>
-                  🪙 {totalCompleted * 50} G
+                <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>総クリア数</div>
+                <div style={{ fontSize: '22px', fontWeight: 800, color: '#10b981', marginTop: '4px' }}>
+                  {totalCompleted} 問
                 </div>
               </div>
             </div>
@@ -1512,7 +1750,7 @@ export default function Home() {
           </section>
         )}
 
-        {/* ── TAB 4: 作成・管理画面 ── */}
+        {/* ── TAB 5: 作成・管理画面 ── */}
         {activeTab === 'memos' && (
           <section>
             <div
@@ -1709,7 +1947,7 @@ export default function Home() {
           </section>
         )}
 
-        {/* ── TAB 5: 目標設定画面 ── */}
+        {/* ── TAB 6: 目標設定画面 ── */}
         {activeTab === 'settings' && (
           <section>
             <div
@@ -1787,7 +2025,7 @@ export default function Home() {
                     marginTop: '8px',
                   }}
                 >
-                  💡 復習を完了してコイン（🪙）を貯めると、猫の育成をよりリッチに進められるようになります！
+                  💡 復習を完了して借金を自動返済し、猫ちゃんを万全の状態で育て上げましょう！
                 </div>
               </div>
             </div>
