@@ -60,7 +60,7 @@ export default function Home() {
     }
   }, []);
 
-  // 3. メモの追加（Supabaseに保存 ＋ 忘却曲線スケジュール生成）
+  // 3. メモの追加（Supabase保存 ＋ 忘却曲線スケジュール＆QStash通知予約）
   const handleAddMemo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
@@ -93,7 +93,7 @@ export default function Home() {
         completed: false,
       }));
 
-      // ③ schedules テーブルへ一括挿入
+      // ③ Supabaseの schedules テーブルへ一括挿入
       const { error: scheduleError } = await supabase
         .from('schedules')
         .insert(scheduleInserts);
@@ -101,7 +101,28 @@ export default function Home() {
       if (scheduleError) {
         console.error('スケジュールの登録に失敗しました:', scheduleError);
       } else {
-        console.log('5段階の復習スケジュールを登録しました！');
+        console.log('5段階の復習スケジュールをSupabaseに登録しました！');
+      }
+
+      // ④ Push通知の権限がある場合、QStashへ5回分の遅延通知を一括予約！
+      if (subscription) {
+        const pushTitle = newMemo.type === 'question' ? `【復習タイム】${newMemo.title}` : `【メモ】${newMemo.title}`;
+        const pushBody = newMemo.type === 'question' ? `正解を確認して筋肉をパンプさせよう！` : newMemo.title;
+
+        // 5つの各ステージごとにQStashへ予約リクエストを投げる
+        for (const item of scheduleInserts) {
+          fetch('/api/schedule-forgetting', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              subscription,
+              title: pushTitle,
+              body: pushBody,
+              scheduledAt: item.scheduled_at,
+            }),
+          }).catch(err => console.error('QStash予約エラー:', err));
+        }
+        console.log('QStashに5回分の復習通知をセット完了！');
       }
 
       setMemos([newMemo, ...memos]);
@@ -231,7 +252,7 @@ export default function Home() {
             Optimize Your Memory.
           </h1>
           <p style={{ color: '#9ca3af', fontSize: '14px', margin: 0 }}>
-            Supabaseクラウドデータベースと連携済み。
+            Supabase ＆ Upstash QStash 連携済み
           </p>
         </section>
 
@@ -246,7 +267,7 @@ export default function Home() {
           marginBottom: '40px'
         }}>
           <h2 style={{ fontSize: '16px', fontWeight: 700, marginTop: 0, marginBottom: '20px', color: '#e5e7eb' }}>
-            新規カード作成 (Supabaseへ保存)
+            新規カード作成 (忘却曲線＋ランダム時間通知予約)
           </h2>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '20px' }}>
@@ -346,7 +367,7 @@ export default function Home() {
                 marginTop: '8px'
               }}
             >
-              Supabaseへ追加する
+              Supabaseへ追加 ＆ 通知を自動予約
             </button>
           </form>
         </section>
