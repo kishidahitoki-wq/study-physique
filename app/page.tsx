@@ -68,24 +68,36 @@ export default function Home() {
         stage,
         scheduled_at,
         completed,
+        memo_id,
         memos (*)
       `)
       .lte('scheduled_at', nowISO)
       .eq('completed', false)
-      .order('scheduled_at', { ascending: true });
+      .order('scheduled_at', { ascending: true }); // 到来日時が古い順
 
     if (error) {
       console.error('復習タスク取得エラー:', error);
     } else if (data) {
-      // 型整形
-      const tasks: ReviewTask[] = data
-        .filter((item: any) => item.memos !== null)
-        .map((item: any) => ({
-          schedule_id: item.id,
-          stage: item.stage,
-          memo: item.memos as Memo,
-        }));
-      setTodayTasks(tasks);
+      // 💡 同一メモの重複を排除し、一番最初に到来した Stage の1枚だけを抽出する
+      const uniqueMemoMap = new Map<string, ReviewTask>();
+
+      for (const item of data) {
+        // item.memos が存在し、まだ Map に登録されていない場合のみ追加
+        if (item.memos && !uniqueMemoMap.has(item.memo_id)) {
+          // 配列として返ってくる型を適切に Memo 型へ変換
+          const rawMemo = Array.isArray(item.memos) ? item.memos[0] : item.memos;
+
+          if (rawMemo) {
+            uniqueMemoMap.set(item.memo_id, {
+              schedule_id: item.id,
+              stage: item.stage,
+              memo: rawMemo as Memo,
+            });
+          }
+        }
+      }
+
+      setTodayTasks(Array.from(uniqueMemoMap.values()));
     }
   };
 
