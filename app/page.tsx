@@ -3,6 +3,17 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { FORGETTING_STAGES, calculateRandomScheduleTime } from '@/lib/scheduler';
+import dynamic from 'next/dynamic';
+
+// 3Dコンポーネントをクライアント限定で動的読み込み
+const PhysiqueModel = dynamic(() => import('@/components/PhysiqueModel'), {
+  ssr: false,
+  loading: () => (
+    <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00f2fe', fontSize: '12px' }}>
+      3D AVATAR LOADING...
+    </div>
+  ),
+});
 
 type Memo = {
   id: string;
@@ -387,7 +398,7 @@ export default function Home() {
       {/* Main Content */}
       <main style={{ maxWidth: '640px', margin: '0 auto', padding: '20px 16px 80px 16px' }}>
 
-        {/* 🏆 フィジークステータス＆レベルボード */}
+      {/* 🏆 フィジークステータス＆レベルボード ＆ 3Dキャラ */}
         <div style={{
           background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.1) 0%, rgba(17, 24, 39, 0.8) 100%)',
           border: '1px solid rgba(0, 242, 254, 0.3)',
@@ -395,9 +406,13 @@ export default function Home() {
           padding: '16px 20px',
           marginBottom: '20px',
           backdropFilter: 'blur(12px)',
-          boxShadow: '0 8px 24px rgba(0, 242, 254, 0.15)'
+          boxShadow: '0 8px 24px rgba(0, 242, 254, 0.15)',
+          overflow: 'hidden'
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          {/* ✨ 3Dモデル表示エリア */}
+          <PhysiqueModel xp={xp} />
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', marginTop: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '24px' }}>{currentRank.icon}</span>
               <div>
