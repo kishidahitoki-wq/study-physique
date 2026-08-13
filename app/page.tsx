@@ -39,6 +39,12 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isShuffled, setIsShuffled] = useState<boolean>(false);
 
+  // 🎮 2. タグ別クイズモード用ステート
+  const [isQuizActive, setIsQuizActive] = useState<boolean>(false);
+  const [quizQueue, setQuizQueue] = useState<Memo[]>([]);
+  const [quizIndex, setQuizIndex] = useState<number>(0);
+  const [showQuizAnswer, setShowQuizAnswer] = useState<boolean>(false);
+
   // アコーディオン開閉状態
   const [showAnswerReviewMap, setShowAnswerReviewMap] = useState<{ [key: string]: boolean }>({});
   const [showAnswerPracticeMap, setShowAnswerPracticeMap] = useState<{ [key: string]: boolean }>({});
@@ -333,6 +339,30 @@ export default function Home() {
     }
   };
 
+  // 🎮 タグ別クイズモード開始ハンドラー
+  const handleStartQuiz = () => {
+    const targetMemos = selectedTag === 'ALL' 
+      ? memos 
+      : memos.filter((m) => m.tag === selectedTag);
+
+    if (targetMemos.length === 0) {
+      alert('このタグのカードがありません');
+      return;
+    }
+
+    // ランダムシャッフル
+    const shuffled = [...targetMemos].sort(() => Math.random() - 0.5);
+    setQuizQueue(shuffled);
+    setQuizIndex(0);
+    setShowQuizAnswer(false);
+    setIsQuizActive(true);
+  };
+
+  const handleNextQuiz = () => {
+    setShowQuizAnswer(false);
+    setQuizIndex((prev) => prev + 1);
+  };
+
   const allTags = Array.from(
     new Set(memos.map((m) => m.tag).filter((t): t is string => Boolean(t)))
   );
@@ -609,7 +639,10 @@ export default function Home() {
           ].map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => {
+                setActiveTab(tab.id as any);
+                setIsQuizActive(false); // タブ切り替え時にクイズ解除
+              }}
               style={{
                 padding: '10px 0',
                 borderRadius: '12px',
@@ -629,7 +662,7 @@ export default function Home() {
         </div>
 
         {/* ── 🏷️ TAG FILTER BAR ── */}
-        {(activeTab === 'review' || activeTab === 'practice') && allTags.length > 0 && (
+        {(activeTab === 'review' || activeTab === 'practice') && !isQuizActive && (
           <div
             style={{
               display: 'flex',
@@ -829,142 +862,303 @@ export default function Home() {
         )}
 
         {/* ========================================================= */}
-        {/* TAB 2: 全メモ一覧画面（検索 ＆ シャッフル対応） */}
+        {/* TAB 2: 全メモ一覧画面（検索・シャッフル・演習モード） */}
         {/* ========================================================= */}
         {activeTab === 'practice' && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* 🔍 1. 検索バー & 2. シャッフルボタン */}
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="🔍 メモを検索..."
-                style={{
-                  flex: 1,
-                  padding: '10px 14px',
-                  borderRadius: '14px',
-                  backgroundColor: '#ffffff',
-                  border: '1px solid #e2e8f0',
-                  color: '#0f172a',
-                  fontSize: '12px',
-                  outline: 'none',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
-                }}
-              />
-              <button
-                onClick={() => setIsShuffled(!isShuffled)}
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: '14px',
-                  backgroundColor: isShuffled ? '#10b981' : '#ffffff',
-                  color: isShuffled ? '#ffffff' : '#475569',
-                  fontWeight: 700,
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  border: isShuffled ? 'none' : '1px solid #e2e8f0',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                🔀 シャッフル
-              </button>
-            </div>
-
-            {/* カード一覧表示 */}
-            {filteredMemos.length === 0 ? (
-              <div
-                style={{
-                  textAlign: 'center',
-                  padding: '30px 20px',
-                  backgroundColor: '#ffffff',
-                  borderRadius: '16px',
-                  color: '#94a3b8',
-                  fontSize: '12px',
-                }}
-              >
-                該当するメモが見つかりません
-              </div>
-            ) : (
-              filteredMemos.map((memo) => (
-                <div
-                  key={memo.id}
-                  style={{
-                    backgroundColor: '#ffffff',
-                    borderRadius: '16px',
-                    padding: '16px',
-                    boxShadow: '0 4px 10px rgba(0,0,0,0.02)',
-                    border: '1px solid #f1f5f9',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <span
-                      style={{
-                        fontSize: '10px',
-                        fontWeight: 700,
-                        color: memo.type === 'question' ? '#3b82f6' : '#64748b',
-                        backgroundColor: memo.type === 'question' ? '#eff6ff' : '#f1f5f9',
-                        padding: '2px 8px',
-                        borderRadius: '8px',
-                      }}
-                    >
-                      {memo.type === 'question' ? '問題' : 'メモ'}
-                    </span>
-                    {memo.tag && (
+            {/* 🎮 クイズモード実行中画面 */}
+            {isQuizActive ? (
+              <div>
+                {quizIndex < quizQueue.length ? (
+                  <div
+                    style={{
+                      backgroundColor: '#ffffff',
+                      borderRadius: '20px',
+                      padding: '20px',
+                      boxShadow: '0 10px 20px -5px rgba(0,0,0,0.03)',
+                      border: '1px solid #f1f5f9',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <span
                         style={{
-                          fontSize: '10px',
+                          fontSize: '11px',
                           fontWeight: 700,
-                          color: '#059669',
-                          backgroundColor: '#ecfdf5',
-                          border: '1px solid #a7f3d0',
-                          padding: '2px 8px',
-                          borderRadius: '8px',
+                          color: '#3b82f6',
+                          backgroundColor: '#eff6ff',
+                          padding: '4px 10px',
+                          borderRadius: '12px',
                         }}
                       >
-                        #{memo.tag}
+                        問題 {quizIndex + 1} / {quizQueue.length}
                       </span>
+                      <button
+                        onClick={() => setIsQuizActive(false)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#94a3b8',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        ✕ 演習を終了
+                      </button>
+                    </div>
+
+                    <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 16px 0', color: '#0f172a', lineHeight: '1.5' }}>
+                      {quizQueue[quizIndex].title}
+                    </h3>
+
+                    {quizQueue[quizIndex].type === 'question' && quizQueue[quizIndex].answer && (
+                      <div style={{ marginBottom: '16px' }}>
+                        {showQuizAnswer ? (
+                          <div
+                            style={{
+                              backgroundColor: '#f8fafc',
+                              padding: '12px 16px',
+                              borderRadius: '12px',
+                              fontSize: '13px',
+                              color: '#334155',
+                              lineHeight: 1.6,
+                              borderLeft: '4px solid #3b82f6',
+                            }}
+                          >
+                            {quizQueue[quizIndex].answer}
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setShowQuizAnswer(true)}
+                            style={{
+                              width: '100%',
+                              padding: '12px',
+                              backgroundColor: '#f1f5f9',
+                              border: 'none',
+                              borderRadius: '12px',
+                              color: '#475569',
+                              fontSize: '12px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            答えを表示する
+                          </button>
+                        )}
+                      </div>
                     )}
+
+                    <button
+                      onClick={handleNextQuiz}
+                      style={{
+                        width: '100%',
+                        padding: '14px',
+                        backgroundColor: '#0f172a',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '12px',
+                        fontWeight: 700,
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 12px rgba(15, 23, 42, 0.15)',
+                      }}
+                    >
+                      {quizIndex + 1 === quizQueue.length ? '演習完了！' : '次の問題へ ➔'}
+                    </button>
                   </div>
+                ) : (
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      padding: '40px 20px',
+                      backgroundColor: '#ffffff',
+                      borderRadius: '20px',
+                      boxShadow: '0 10px 25px -5px rgba(0,0,0,0.03)',
+                      border: '1px solid #f1f5f9',
+                    }}
+                  >
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: '#10b981', marginBottom: '8px' }}>
+                      🎉 このタグの全問題を完了しました！
+                    </div>
+                    <button
+                      onClick={() => setIsQuizActive(false)}
+                      style={{
+                        padding: '10px 20px',
+                        backgroundColor: '#0f172a',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '12px',
+                        fontWeight: 700,
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        marginTop: '12px',
+                      }}
+                    >
+                      一覧へ戻る
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* 通常の一覧表示モード */
+              <>
+                {/* 🚀 このタグで復習を開始するボタン */}
+                <button
+                  onClick={handleStartQuiz}
+                  style={{
+                    width: '100%',
+                    padding: '14px',
+                    backgroundColor: '#10b981',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '16px',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  🚀 {selectedTag === 'ALL' ? 'すべての問題' : `#${selectedTag}`} で復習を始める
+                </button>
 
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>{memo.title}</div>
+                {/* 🔍 検索バー & シャッフルボタン */}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="🔍 メモを検索..."
+                    style={{
+                      flex: 1,
+                      padding: '10px 14px',
+                      borderRadius: '14px',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid #e2e8f0',
+                      color: '#0f172a',
+                      fontSize: '12px',
+                      outline: 'none',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+                    }}
+                  />
+                  <button
+                    onClick={() => setIsShuffled(!isShuffled)}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: '14px',
+                      backgroundColor: isShuffled ? '#10b981' : '#ffffff',
+                      color: isShuffled ? '#ffffff' : '#475569',
+                      fontWeight: 700,
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      border: isShuffled ? 'none' : '1px solid #e2e8f0',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    🔀 シャッフル
+                  </button>
+                </div>
 
-                  {memo.type === 'question' && memo.answer && (
-                    <div style={{ marginTop: '8px' }}>
-                      {showAnswerPracticeMap[memo.id] ? (
-                        <div
+                {/* カード一覧表示 */}
+                {filteredMemos.length === 0 ? (
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      padding: '30px 20px',
+                      backgroundColor: '#ffffff',
+                      borderRadius: '16px',
+                      color: '#94a3b8',
+                      fontSize: '12px',
+                    }}
+                  >
+                    該当するメモが見つかりません
+                  </div>
+                ) : (
+                  filteredMemos.map((memo) => (
+                    <div
+                      key={memo.id}
+                      style={{
+                        backgroundColor: '#ffffff',
+                        borderRadius: '16px',
+                        padding: '16px',
+                        boxShadow: '0 4px 10px rgba(0,0,0,0.02)',
+                        border: '1px solid #f1f5f9',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <span
                           style={{
-                            backgroundColor: '#f8fafc',
-                            padding: '10px 12px',
-                            borderRadius: '8px',
-                            fontSize: '12px',
-                            color: '#475569',
-                            marginTop: '6px',
-                          }}
-                        >
-                          {memo.answer}
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => togglePracticeAnswer(memo.id)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#10b981',
-                            fontSize: '11px',
+                            fontSize: '10px',
                             fontWeight: 700,
-                            cursor: 'pointer',
-                            padding: 0,
-                            marginTop: '4px',
+                            color: memo.type === 'question' ? '#3b82f6' : '#64748b',
+                            backgroundColor: memo.type === 'question' ? '#eff6ff' : '#f1f5f9',
+                            padding: '2px 8px',
+                            borderRadius: '8px',
                           }}
                         >
-                          答えを確認
-                        </button>
+                          {memo.type === 'question' ? '問題' : 'メモ'}
+                        </span>
+                        {memo.tag && (
+                          <span
+                            style={{
+                              fontSize: '10px',
+                              fontWeight: 700,
+                              color: '#059669',
+                              backgroundColor: '#ecfdf5',
+                              border: '1px solid #a7f3d0',
+                              padding: '2px 8px',
+                              borderRadius: '8px',
+                            }}
+                          >
+                            #{memo.tag}
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>{memo.title}</div>
+
+                      {memo.type === 'question' && memo.answer && (
+                        <div style={{ marginTop: '8px' }}>
+                          {showAnswerPracticeMap[memo.id] ? (
+                            <div
+                              style={{
+                                backgroundColor: '#f8fafc',
+                                padding: '10px 12px',
+                                borderRadius: '8px',
+                                fontSize: '12px',
+                                color: '#475569',
+                                marginTop: '6px',
+                              }}
+                            >
+                              {memo.answer}
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => togglePracticeAnswer(memo.id)}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#10b981',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                padding: 0,
+                                marginTop: '4px',
+                              }}
+                            >
+                              答えを確認
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
-                  )}
-                </div>
-              ))
+                  ))
+                )}
+              </>
             )}
           </section>
         )}
