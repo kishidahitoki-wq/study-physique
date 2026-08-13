@@ -9,8 +9,19 @@ import dynamic from 'next/dynamic';
 const PhysiqueModel = dynamic(() => import('@/components/PhysiqueModel'), {
   ssr: false,
   loading: () => (
-    <div style={{ height: '220px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00f2fe', fontSize: '12px' }}>
-      3D AVATAR LOADING...
+    <div
+      style={{
+        height: '200px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#475569',
+        fontSize: '11px',
+        fontFamily: 'monospace',
+        letterSpacing: '0.15em',
+      }}
+    >
+      [ LOADING_3D_MODEL... ]
     </div>
   ),
 });
@@ -31,11 +42,11 @@ type ReviewTask = {
 
 // フィジークランク定義
 const RANKS = [
-  { name: 'BEGINNER', minXp: 0, icon: '🐣' },
-  { name: 'GYM RAT', minXp: 200, icon: '🏋️' },
-  { name: 'PHYSICAL ATHLETE', minXp: 600, icon: '🥇' },
-  { name: 'PRO ATHLETE', minXp: 1200, icon: '🏆' },
-  { name: 'OLYMPIA CHAMP', minXp: 2500, icon: '👑' },
+  { name: 'LV.1 NOVICE', minXp: 0, code: 'RANK-D', color: '#334155' },
+  { name: 'LV.2 AMATEUR', minXp: 200, code: 'RANK-C', color: '#64748b' },
+  { name: 'LV.3 ADVANCED', minXp: 600, code: 'RANK-B', color: '#94a3b8' },
+  { name: 'LV.4 PRO_ATHLETE', minXp: 1200, code: 'RANK-A', color: '#00f2fe' },
+  { name: 'LV.5 OLYMPIA', minXp: 2500, code: 'RANK-S', color: '#ffffff' },
 ];
 
 export default function Home() {
@@ -43,7 +54,7 @@ export default function Home() {
 
   const [memos, setMemos] = useState<Memo[]>([]);
   const [todayTasks, setTodayTasks] = useState<ReviewTask[]>([]);
-  
+
   // アコーディオン開閉状態
   const [showAnswerReviewMap, setShowAnswerReviewMap] = useState<{ [key: string]: boolean }>({});
   const [showAnswerPracticeMap, setShowAnswerPracticeMap] = useState<{ [key: string]: boolean }>({});
@@ -67,7 +78,6 @@ export default function Home() {
   useEffect(() => {
     fetchData();
 
-    // ローカルストレージからゲーミフィケーションデータの読み込み
     const savedXp = localStorage.getItem('physique_xp');
     const savedStreak = localStorage.getItem('physique_streak');
     const savedLastDate = localStorage.getItem('physique_last_date');
@@ -83,7 +93,6 @@ export default function Home() {
     setXp(newXp);
     localStorage.setItem('physique_xp', newXp.toString());
 
-    // 日付の判定（ストリーク更新）
     const todayStr = new Date().toISOString().split('T')[0];
     if (lastReviewDate !== todayStr) {
       const newStreak = streak + 1;
@@ -164,14 +173,17 @@ export default function Home() {
 
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
-      navigator.serviceWorker.register('/sw.js').then(async (reg) => {
-        setStatus('READY');
-        const existingSub = await reg.pushManager.getSubscription();
-        if (existingSub) {
-          setSubscription(existingSub);
-          setStatus('PUSH ENABLED');
-        }
-      }).catch(err => setStatus('SW ERROR: ' + err.message));
+      navigator.serviceWorker
+        .register('/sw.js')
+        .then(async (reg) => {
+          setStatus('READY');
+          const existingSub = await reg.pushManager.getSubscription();
+          if (existingSub) {
+            setSubscription(existingSub);
+            setStatus('PUSH ENABLED');
+          }
+        })
+        .catch((err) => setStatus('SW ERROR: ' + err.message));
     } else {
       setStatus('UNSUPPORTED (iOS NEEDS PWA)');
     }
@@ -210,8 +222,10 @@ export default function Home() {
       }
 
       if (subscription) {
-        const pushTitle = newMemo.type === 'question' ? `【復習タイム】${newMemo.title}` : `【メモ】${newMemo.title}`;
-        const pushBody = newMemo.type === 'question' ? `正解を確認して筋肉をパンプさせよう！` : newMemo.title;
+        const pushTitle =
+          newMemo.type === 'question' ? `【復習タイム】${newMemo.title}` : `【メモ】${newMemo.title}`;
+        const pushBody =
+          newMemo.type === 'question' ? `正解を確認して筋肉をパンプさせよう！` : newMemo.title;
 
         for (const item of scheduleInserts) {
           fetch('/api/schedule-forgetting', {
@@ -223,7 +237,7 @@ export default function Home() {
               body: pushBody,
               scheduledAt: item.scheduled_at,
             }),
-          }).catch(err => console.error('QStash予約エラー:', err));
+          }).catch((err) => console.error('QStash予約エラー:', err));
         }
       }
 
@@ -245,14 +259,13 @@ export default function Home() {
     if (error) {
       alert('更新に失敗しました: ' + error.message);
     } else {
-      setTodayTasks(todayTasks.filter(task => task.schedule_id !== scheduleId));
-      addXpAndCheckStreak(50); // XP+50 獲得！
+      setTodayTasks(todayTasks.filter((task) => task.schedule_id !== scheduleId));
+      addXpAndCheckStreak(50);
     }
   };
 
   // 復習リセット（もう一歩・うろ覚え）
   const handleResetReview = async (task: ReviewTask) => {
-    // Stage 1 にリセットして今日今すぐ再出題
     const { error } = await supabase
       .from('schedules')
       .update({
@@ -271,14 +284,14 @@ export default function Home() {
   };
 
   const toggleReviewAnswer = (scheduleId: string) => {
-    setShowAnswerReviewMap(prev => ({
+    setShowAnswerReviewMap((prev) => ({
       ...prev,
       [scheduleId]: !prev[scheduleId],
     }));
   };
 
   const togglePracticeAnswer = (memoId: string) => {
-    setShowAnswerPracticeMap(prev => ({
+    setShowAnswerPracticeMap((prev) => ({
       ...prev,
       [memoId]: !prev[memoId],
     }));
@@ -291,8 +304,8 @@ export default function Home() {
     if (error) {
       alert('削除に失敗しました: ' + error.message);
     } else {
-      setMemos(memos.filter(memo => memo.id !== id));
-      setTodayTasks(todayTasks.filter(task => task.memo.id !== id));
+      setMemos(memos.filter((memo) => memo.id !== id));
+      setTodayTasks(todayTasks.filter((task) => task.memo.id !== id));
     }
   };
 
@@ -307,7 +320,7 @@ export default function Home() {
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!)
+        applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!),
       });
 
       setSubscription(sub);
@@ -333,8 +346,8 @@ export default function Home() {
         subscription,
         title: pushTitle,
         body: pushBody,
-        delaySeconds: 10
-      })
+        delaySeconds: 10,
+      }),
     });
 
     if (res.ok) {
@@ -347,25 +360,50 @@ export default function Home() {
   const currentRank = getCurrentRank();
 
   return (
-    <div style={{ backgroundColor: '#090d16', color: '#f3f4f6', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
-      
-      {/* Header */}
-      <header style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 50,
-        backdropFilter: 'blur(12px)',
-        backgroundColor: 'rgba(9, 13, 22, 0.8)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-        padding: '12px 24px',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
+    <div
+      style={{
+        backgroundColor: '#0a0a0a',
+        color: '#e2e8f0',
+        minHeight: '100vh',
+        fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+        padding: '24px 16px 80px 16px',
+        boxSizing: 'border-box',
+      }}
+    >
+      {/* ── HEADER ── */}
+      <header
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 50,
+          backdropFilter: 'blur(12px)',
+          backgroundColor: 'rgba(10, 10, 10, 0.85)',
+          borderBottom: '1px solid #262626',
+          padding: '12px 16px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          maxWidth: '540px',
+          margin: '0 auto 20px auto',
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: status === 'PUSH ENABLED' ? '#00f2fe' : '#e11d48', boxShadow: status === 'PUSH ENABLED' ? '0 0 10px #00f2fe' : 'none' }}></div>
-          <span style={{ fontWeight: 800, fontSize: '18px', letterSpacing: '0.05em', background: 'linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-            PHYSIQUE STUDY
+          <div
+            style={{
+              width: '6px',
+              height: '6px',
+              backgroundColor: status === 'PUSH ENABLED' ? '#00f2fe' : '#ef4444',
+            }}
+          />
+          <span
+            style={{
+              fontWeight: 700,
+              fontSize: '12px',
+              letterSpacing: '0.15em',
+              color: '#ffffff',
+            }}
+          >
+            PHYSIQUE_CORE // V1.0
           </span>
         </div>
 
@@ -374,215 +412,262 @@ export default function Home() {
             <button
               onClick={handleSubscribe}
               style={{
-                background: 'linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)',
-                color: '#090d16',
-                border: 'none',
-                padding: '8px 16px',
-                borderRadius: '20px',
+                backgroundColor: '#171717',
+                color: '#00f2fe',
+                border: '1px solid #00f2fe',
+                padding: '6px 12px',
+                borderRadius: '2px',
                 fontWeight: 700,
-                fontSize: '12px',
+                fontSize: '10px',
+                fontFamily: 'inherit',
                 cursor: 'pointer',
-                boxShadow: '0 0 15px rgba(0, 242, 254, 0.4)'
+                letterSpacing: '0.08em',
               }}
             >
-              NOTIFICATION ENABLE
+              [ ENABLE_PUSH ]
             </button>
           ) : (
-            <span style={{ fontSize: '11px', color: '#00f2fe', letterSpacing: '0.1em', fontWeight: 600, border: '1px solid rgba(0,242,254,0.3)', padding: '4px 10px', borderRadius: '12px' }}>
-              ONLINE / ACTIVE
+            <span
+              style={{
+                fontSize: '9px',
+                color: '#00f2fe',
+                letterSpacing: '0.1em',
+                border: '1px solid #262626',
+                padding: '3px 8px',
+                borderRadius: '2px',
+              }}
+            >
+              SYS_ACTIVE
             </span>
           )}
         </div>
       </header>
 
-      {/* Main Content */}
-      <main style={{ maxWidth: '640px', margin: '0 auto', padding: '20px 16px 80px 16px' }}>
+      {/* Main Content Container */}
+      <main style={{ maxWidth: '540px', margin: '0 auto' }}>
+        {/* ── 🏆 3D MODEL & STATUS MONITOR ── */}
+        <div
+          style={{
+            backgroundColor: '#121212',
+            border: '1px solid #262626',
+            borderRadius: '4px',
+            padding: '16px',
+            marginBottom: '20px',
+            position: 'relative',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              top: '8px',
+              left: '8px',
+              fontSize: '9px',
+              color: '#525252',
+              letterSpacing: '0.1em',
+            }}
+          >
+            [ MODEL_VIEWER ]
+          </div>
 
-      {/* 🏆 フィジークステータス＆レベルボード ＆ 3Dキャラ */}
-        <div style={{
-          background: 'linear-gradient(135deg, rgba(0, 242, 254, 0.1) 0%, rgba(17, 24, 39, 0.8) 100%)',
-          border: '1px solid rgba(0, 242, 254, 0.3)',
-          borderRadius: '20px',
-          padding: '16px 20px',
-          marginBottom: '20px',
-          backdropFilter: 'blur(12px)',
-          boxShadow: '0 8px 24px rgba(0, 242, 254, 0.15)',
-          overflow: 'hidden'
-        }}>
-          {/* ✨ 3Dモデル表示エリア */}
+          {/* 3D Model View */}
           <PhysiqueModel xp={xp} />
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', marginTop: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '24px' }}>{currentRank.icon}</span>
-              <div>
-                <span style={{ fontSize: '10px', color: '#00f2fe', fontWeight: 800, letterSpacing: '0.1em' }}>PHYSIQUE RANK</span>
-                <div style={{ fontSize: '16px', fontWeight: 800, color: '#ffffff' }}>{currentRank.name}</div>
+          {/* Status Monitor */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '12px',
+              paddingTop: '12px',
+              borderTop: '1px solid #1f1f1f',
+              marginTop: '8px',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '9px', color: '#666666', letterSpacing: '0.1em', marginBottom: '2px' }}>
+                CURRENT_RANK
+              </div>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: currentRank.color, letterSpacing: '0.05em' }}>
+                {currentRank.name}
               </div>
             </div>
+
             <div style={{ textAlign: 'right' }}>
-              <span style={{ fontSize: '10px', color: '#ffb703', fontWeight: 800, letterSpacing: '0.1em' }}>STREAK</span>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#ffb703' }}>🔥 {streak} 日連続</div>
+              <div style={{ fontSize: '9px', color: '#666666', letterSpacing: '0.1em', marginBottom: '2px' }}>
+                STREAK_LOG
+              </div>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff', letterSpacing: '0.05em' }}>
+                {streak} DAYS_ACTIVE
+              </div>
             </div>
           </div>
 
-          {/* XP ゲージ */}
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#9ca3af', marginBottom: '4px', fontWeight: 600 }}>
-              <span>XP: {xp} PTS</span>
-              <span>NEXT RANK</span>
+          {/* XP Gauge Bar */}
+          <div style={{ marginTop: '12px' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: '9px',
+                color: '#525252',
+                marginBottom: '4px',
+                letterSpacing: '0.08em',
+              }}
+            >
+              <span>XP: {xp} / 2500</span>
+              <span>{Math.floor((xp / 2500) * 100)}%</span>
             </div>
-            <div style={{ width: '100%', height: '8px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
-              <div style={{
-                height: '100%',
-                width: `${Math.min(100, (xp / 2500) * 100)}%`,
-                background: 'linear-gradient(90deg, #00f2fe 0%, #4facfe 100%)',
-                borderRadius: '4px',
-                transition: 'width 0.4s ease'
-              }}></div>
+            <div style={{ width: '100%', height: '3px', backgroundColor: '#1a1a1a' }}>
+              <div
+                style={{
+                  height: '100%',
+                  width: `${Math.min(100, (xp / 2500) * 100)}%`,
+                  backgroundColor: '#00f2fe',
+                  transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+              />
             </div>
           </div>
         </div>
 
-        {/* 🗂️ タブナビゲーション */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
-          gap: '6px',
-          background: 'rgba(17, 24, 39, 0.7)',
-          padding: '6px',
-          borderRadius: '16px',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          marginBottom: '24px',
-          backdropFilter: 'blur(12px)'
-        }}>
+        {/* ── 🗂️ TAB NAVIGATION ── */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr 1fr',
+            gap: '4px',
+            backgroundColor: '#121212',
+            padding: '4px',
+            border: '1px solid #262626',
+            borderRadius: '4px',
+            marginBottom: '20px',
+          }}
+        >
           <button
             onClick={() => setActiveTab('review')}
             style={{
               padding: '10px 4px',
-              borderRadius: '12px',
+              borderRadius: '2px',
               border: 'none',
-              background: activeTab === 'review' ? 'linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)' : 'transparent',
-              color: activeTab === 'review' ? '#090d16' : '#9ca3af',
-              fontWeight: 800,
-              fontSize: '12px',
+              backgroundColor: activeTab === 'review' ? '#262626' : 'transparent',
+              color: activeTab === 'review' ? '#00f2fe' : '#737373',
+              fontWeight: 700,
+              fontSize: '11px',
+              fontFamily: 'inherit',
               cursor: 'pointer',
-              transition: 'all 0.2s',
-              boxShadow: activeTab === 'review' ? '0 4px 15px rgba(0, 242, 254, 0.3)' : 'none'
+              letterSpacing: '0.05em',
             }}
           >
-            🔥 復習 ({todayTasks.length})
+            REVIEW ({todayTasks.length})
           </button>
 
           <button
             onClick={() => setActiveTab('practice')}
             style={{
               padding: '10px 4px',
-              borderRadius: '12px',
+              borderRadius: '2px',
               border: 'none',
-              background: activeTab === 'practice' ? 'linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)' : 'transparent',
-              color: activeTab === 'practice' ? '#090d16' : '#9ca3af',
-              fontWeight: 800,
-              fontSize: '12px',
+              backgroundColor: activeTab === 'practice' ? '#262626' : 'transparent',
+              color: activeTab === 'practice' ? '#00f2fe' : '#737373',
+              fontWeight: 700,
+              fontSize: '11px',
+              fontFamily: 'inherit',
               cursor: 'pointer',
-              transition: 'all 0.2s',
-              boxShadow: activeTab === 'practice' ? '0 4px 15px rgba(0, 242, 254, 0.3)' : 'none'
+              letterSpacing: '0.05em',
             }}
           >
-            🧠 全メモ復習
+            ALL_MEMO
           </button>
 
           <button
             onClick={() => setActiveTab('memos')}
             style={{
               padding: '10px 4px',
-              borderRadius: '12px',
+              borderRadius: '2px',
               border: 'none',
-              background: activeTab === 'memos' ? 'linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)' : 'transparent',
-              color: activeTab === 'memos' ? '#090d16' : '#9ca3af',
-              fontWeight: 800,
-              fontSize: '12px',
+              backgroundColor: activeTab === 'memos' ? '#262626' : 'transparent',
+              color: activeTab === 'memos' ? '#00f2fe' : '#737373',
+              fontWeight: 700,
+              fontSize: '11px',
+              fontFamily: 'inherit',
               cursor: 'pointer',
-              transition: 'all 0.2s',
-              boxShadow: activeTab === 'memos' ? '0 4px 15px rgba(0, 242, 254, 0.3)' : 'none'
+              letterSpacing: '0.05em',
             }}
           >
-            ✏️ 作成・編集
+            EDITOR
           </button>
         </div>
-
 
         {/* ========================================================= */}
         {/* TAB 1: 🔥 今日の復習画面 */}
         {/* ========================================================= */}
         {activeTab === 'review' && (
           <section>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <div>
-                <h2 style={{ fontSize: '18px', fontWeight: 800, margin: 0, color: '#00f2fe' }}>
-                  TODAY'S REVIEW
+                <h2 style={{ fontSize: '12px', fontWeight: 700, margin: 0, color: '#00f2fe', letterSpacing: '0.1em' }}>
+                  // SCHEDULED_TASKS
                 </h2>
-                <p style={{ fontSize: '12px', color: '#6b7280', margin: '2px 0 0 0' }}>
-                  今すぐパンプ（定着）させるべき復習カード
-                </p>
               </div>
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#00f2fe', background: 'rgba(0, 242, 254, 0.1)', border: '1px solid rgba(0, 242, 254, 0.3)', padding: '4px 10px', borderRadius: '12px' }}>
-                {todayTasks.length} TASKS
+              <span style={{ fontSize: '10px', color: '#737373', border: '1px solid #262626', padding: '2px 8px', borderRadius: '2px' }}>
+                {todayTasks.length} PENDING
               </span>
             </div>
 
             {todayTasks.length === 0 ? (
-              <div style={{
-                textAlign: 'center',
-                padding: '48px 16px',
-                background: 'rgba(0, 242, 254, 0.03)',
-                border: '1px dashed rgba(0, 242, 254, 0.2)',
-                borderRadius: '20px',
-                color: '#9ca3af'
-              }}>
-                <div style={{ fontSize: '36px', marginBottom: '12px' }}>🎉</div>
-                <div style={{ fontWeight: 800, color: '#f3f4f6', fontSize: '16px', marginBottom: '4px' }}>本日のトレーニング完了！</div>
-                <div style={{ fontSize: '13px' }}>すべての復習をクリアしました。筋肉（記憶）が育っています！</div>
+              <div
+                style={{
+                  textAlign: 'center',
+                  padding: '40px 16px',
+                  backgroundColor: '#121212',
+                  border: '1px dashed #262626',
+                  borderRadius: '4px',
+                  color: '#737373',
+                }}
+              >
+                <div style={{ fontSize: '11px', color: '#10b981', fontWeight: 700, marginBottom: '6px', letterSpacing: '0.1em' }}>
+                  [ STATUS: ALL_CLEAR ]
+                </div>
+                <div style={{ fontSize: '11px' }}>本日の復習タスクはすべて完了しました。</div>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {todayTasks.map((task) => (
                   <div
                     key={task.schedule_id}
                     style={{
-                      background: 'linear-gradient(135deg, rgba(17, 24, 39, 0.9) 0%, rgba(10, 15, 30, 0.9) 100%)',
-                      border: '1px solid rgba(0, 242, 254, 0.3)',
-                      borderRadius: '20px',
-                      padding: '20px',
-                      boxShadow: '0 10px 30px rgba(0, 242, 254, 0.08)',
-                      backdropFilter: 'blur(12px)'
+                      backgroundColor: '#121212',
+                      border: '1px solid #262626',
+                      borderRadius: '4px',
+                      padding: '16px',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                      <span style={{ fontSize: '11px', fontWeight: 800, color: '#00f2fe', background: 'rgba(0, 242, 254, 0.15)', padding: '4px 10px', borderRadius: '8px' }}>
-                        STAGE {task.stage} / 5
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <span style={{ fontSize: '9px', fontWeight: 700, color: '#00f2fe', border: '1px solid #1a3a4a', padding: '2px 6px', borderRadius: '2px', letterSpacing: '0.05em' }}>
+                        STAGE 0{task.stage} / 05
                       </span>
-                      <span style={{ fontSize: '11px', color: '#6b7280' }}>
-                        {task.memo.type === 'question' ? '❓ クイズ' : '📝 メモ'}
+                      <span style={{ fontSize: '9px', color: '#525252', letterSpacing: '0.05em' }}>
+                        {task.memo.type === 'question' ? 'TYPE: QUESTION' : 'TYPE: SIMPLE_MEMO'}
                       </span>
                     </div>
 
-                    <h3 style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 16px 0', color: '#ffffff' }}>
+                    <h3 style={{ fontSize: '13px', fontWeight: 400, margin: '0 0 14px 0', color: '#e5e5e5', lineHeight: '1.5' }}>
                       {task.memo.title}
                     </h3>
 
                     {task.memo.type === 'question' && task.memo.answer && (
-                      <div style={{ marginBottom: '16px' }}>
+                      <div style={{ marginBottom: '14px' }}>
                         {showAnswerReviewMap[task.schedule_id] ? (
-                          <div style={{
-                            background: 'rgba(0, 242, 254, 0.06)',
-                            borderLeft: '3px solid #00f2fe',
-                            padding: '12px 16px',
-                            borderRadius: '8px',
-                            fontSize: '14px',
-                            color: '#e5e7eb',
-                            lineHeight: 1.5
-                          }}>
+                          <div
+                            style={{
+                              backgroundColor: '#0a0a0a',
+                              borderLeft: '2px solid #00f2fe',
+                              padding: '10px 12px',
+                              fontSize: '11px',
+                              color: '#d4d4d4',
+                              lineHeight: 1.5,
+                            }}
+                          >
                             {task.memo.answer}
                           </div>
                         ) : (
@@ -590,16 +675,18 @@ export default function Home() {
                             onClick={() => toggleReviewAnswer(task.schedule_id)}
                             style={{
                               width: '100%',
-                              padding: '10px',
-                              background: 'rgba(255, 255, 255, 0.05)',
-                              border: '1px dashed rgba(255, 255, 255, 0.15)',
-                              borderRadius: '10px',
-                              color: '#9ca3af',
-                              fontSize: '13px',
-                              cursor: 'pointer'
+                              padding: '8px',
+                              backgroundColor: '#171717',
+                              border: '1px solid #262626',
+                              borderRadius: '2px',
+                              color: '#737373',
+                              fontSize: '10px',
+                              fontFamily: 'inherit',
+                              cursor: 'pointer',
+                              letterSpacing: '0.05em',
                             }}
                           >
-                            👁️ 答えを見る
+                            [ SHOW_ANSWER ]
                           </button>
                         )}
                       </div>
@@ -610,34 +697,37 @@ export default function Home() {
                       <button
                         onClick={() => handleResetReview(task)}
                         style={{
-                          padding: '12px',
-                          background: 'rgba(239, 68, 68, 0.15)',
+                          padding: '10px',
+                          backgroundColor: '#2a0a0a',
                           color: '#f87171',
-                          border: '1px solid rgba(239, 68, 68, 0.3)',
-                          borderRadius: '12px',
+                          border: '1px solid #ef4444',
+                          borderRadius: '2px',
                           fontWeight: 700,
-                          fontSize: '13px',
-                          cursor: 'pointer'
+                          fontSize: '10px',
+                          fontFamily: 'inherit',
+                          cursor: 'pointer',
+                          letterSpacing: '0.05em',
                         }}
                       >
-                        💦 もう一歩
+                        RESET (STAGE 1)
                       </button>
 
                       <button
                         onClick={() => handleCompleteReview(task.schedule_id)}
                         style={{
-                          padding: '12px',
-                          background: 'linear-gradient(135deg, #00f2fe 0%, #4facfe 100%)',
-                          color: '#090d16',
-                          border: 'none',
-                          borderRadius: '12px',
-                          fontWeight: 800,
-                          fontSize: '13px',
+                          padding: '10px',
+                          backgroundColor: '#00f2fe',
+                          color: '#0a0a0a',
+                          border: '1px solid #00f2fe',
+                          borderRadius: '2px',
+                          fontWeight: 700,
+                          fontSize: '10px',
+                          fontFamily: 'inherit',
                           cursor: 'pointer',
-                          boxShadow: '0 4px 15px rgba(0, 242, 254, 0.3)'
+                          letterSpacing: '0.05em',
                         }}
                       >
-                        ✨ 完璧！ (+50XP)
+                        COMPLETE (+50XP)
                       </button>
                     </div>
                   </div>
@@ -647,90 +737,93 @@ export default function Home() {
           </section>
         )}
 
-
         {/* ========================================================= */}
         {/* TAB 2: 🧠 全メモ自主復習画面 */}
         {/* ========================================================= */}
         {activeTab === 'practice' && (
           <section>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <div>
-                <h2 style={{ fontSize: '18px', fontWeight: 800, margin: 0, color: '#f3f4f6' }}>
-                  ALL PRACTICE
+                <h2 style={{ fontSize: '12px', fontWeight: 700, margin: 0, color: '#e5e5e5', letterSpacing: '0.1em' }}>
+                  // ALL_PRACTICE_ARCHIVE
                 </h2>
-                <p style={{ fontSize: '12px', color: '#6b7280', margin: '2px 0 0 0' }}>
-                  いつでも行える自由自主トレーニング
-                </p>
               </div>
-              <span style={{ fontSize: '11px', color: '#6b7280', background: 'rgba(255,255,255,0.05)', padding: '4px 10px', borderRadius: '10px' }}>
-                {memos.length} CARDS
+              <span style={{ fontSize: '10px', color: '#737373', border: '1px solid #262626', padding: '2px 8px', borderRadius: '2px' }}>
+                {memos.length} ITEMS
               </span>
             </div>
 
             {loading ? (
-              <div style={{ textAlign: 'center', padding: '40px 0', color: '#6b7280' }}>読み込み中...</div>
+              <div style={{ textAlign: 'center', padding: '32px 0', color: '#525252', fontSize: '11px' }}>
+                [ LOADING_DATA... ]
+              </div>
             ) : memos.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '48px 0', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '16px', color: '#4b5563' }}>
-                カードがありません。「作成・編集」タブから作ってみましょう！
+              <div style={{ textAlign: 'center', padding: '32px 0', border: '1px dashed #262626', borderRadius: '4px', color: '#525252', fontSize: '11px' }}>
+                データが存在しません。[ EDITOR ] タブから作成してください。
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {memos.map((memo) => (
                   <div
                     key={memo.id}
                     style={{
-                      background: 'rgba(17, 24, 39, 0.5)',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      borderRadius: '16px',
-                      padding: '18px',
-                      backdropFilter: 'blur(8px)'
+                      backgroundColor: '#121212',
+                      border: '1px solid #262626',
+                      borderRadius: '4px',
+                      padding: '14px',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                      <span style={{
-                        fontSize: '10px',
-                        fontWeight: 800,
-                        padding: '3px 8px',
-                        borderRadius: '6px',
-                        background: memo.type === 'question' ? 'rgba(0, 242, 254, 0.15)' : 'rgba(255, 255, 255, 0.1)',
-                        color: memo.type === 'question' ? '#00f2fe' : '#9ca3af'
-                      }}>
-                        {memo.type === 'question' ? 'QUESTION' : 'MEMO'}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span
+                        style={{
+                          fontSize: '8px',
+                          fontWeight: 700,
+                          padding: '2px 6px',
+                          borderRadius: '2px',
+                          border: '1px solid #262626',
+                          color: memo.type === 'question' ? '#00f2fe' : '#737373',
+                          letterSpacing: '0.05em',
+                        }}
+                      >
+                        {memo.type === 'question' ? 'QUESTION' : 'SIMPLE_MEMO'}
                       </span>
                     </div>
 
-                    <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: 600, color: '#f3f4f6' }}>
+                    <h3 style={{ margin: '0 0 10px 0', fontSize: '12px', fontWeight: 400, color: '#d4d4d4', lineHeight: '1.5' }}>
                       {memo.title}
                     </h3>
 
                     {memo.type === 'question' && memo.answer && (
                       <div>
                         {showAnswerPracticeMap[memo.id] ? (
-                          <div style={{
-                            background: 'rgba(0,0,0,0.3)',
-                            padding: '12px 14px',
-                            borderRadius: '8px',
-                            fontSize: '13px',
-                            color: '#e5e7eb',
-                            borderLeft: '2px solid #00f2fe',
-                            lineHeight: 1.5,
-                            marginTop: '8px'
-                          }}>
+                          <div
+                            style={{
+                              backgroundColor: '#0a0a0a',
+                              padding: '10px 12px',
+                              borderRadius: '2px',
+                              fontSize: '11px',
+                              color: '#a3a3a3',
+                              borderLeft: '2px solid #00f2fe',
+                              lineHeight: 1.5,
+                              marginTop: '6px',
+                            }}
+                          >
                             {memo.answer}
                             <button
                               onClick={() => togglePracticeAnswer(memo.id)}
                               style={{
                                 display: 'block',
-                                marginTop: '8px',
+                                marginTop: '6px',
                                 background: 'transparent',
                                 border: 'none',
-                                color: '#6b7280',
-                                fontSize: '11px',
+                                color: '#525252',
+                                fontSize: '9px',
+                                fontFamily: 'inherit',
                                 cursor: 'pointer',
-                                padding: 0
+                                padding: 0,
                               }}
                             >
-                              ▲ 答えを隠す
+                              ▲ [ HIDE_ANSWER ]
                             </button>
                           </div>
                         ) : (
@@ -738,17 +831,18 @@ export default function Home() {
                             onClick={() => togglePracticeAnswer(memo.id)}
                             style={{
                               width: '100%',
-                              padding: '8px',
-                              background: 'rgba(255,255,255,0.03)',
-                              border: '1px solid rgba(255,255,255,0.08)',
-                              borderRadius: '8px',
+                              padding: '6px 8px',
+                              backgroundColor: '#171717',
+                              border: '1px solid #262626',
+                              borderRadius: '2px',
                               color: '#00f2fe',
-                              fontSize: '12px',
-                              fontWeight: 600,
-                              cursor: 'pointer'
+                              fontSize: '10px',
+                              fontFamily: 'inherit',
+                              cursor: 'pointer',
+                              letterSpacing: '0.05em',
                             }}
                           >
-                            👁️ 答えを確認する
+                            [ CHECK_ANSWER ]
                           </button>
                         )}
                       </div>
@@ -760,103 +854,108 @@ export default function Home() {
           </section>
         )}
 
-
         {/* ========================================================= */}
         {/* TAB 3: ✏️ メモ作成 ＆ 編集・管理画面 */}
         {/* ========================================================= */}
         {activeTab === 'memos' && (
           <section>
-            <div style={{
-              background: 'rgba(17, 24, 39, 0.7)',
-              backdropFilter: 'blur(16px)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '20px',
-              padding: '24px',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
-              marginBottom: '32px'
-            }}>
-              <h2 style={{ fontSize: '16px', fontWeight: 700, marginTop: 0, marginBottom: '20px', color: '#e5e7eb' }}>
-                新規カード作成
+            <div
+              style={{
+                backgroundColor: '#121212',
+                border: '1px solid #262626',
+                borderRadius: '4px',
+                padding: '16px',
+                marginBottom: '20px',
+              }}
+            >
+              <h2 style={{ fontSize: '11px', fontWeight: 700, marginTop: 0, marginBottom: '14px', color: '#00f2fe', letterSpacing: '0.1em' }}>
+                // CREATE_NEW_CARD
               </h2>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
                 <button
                   type="button"
                   onClick={() => setType('question')}
                   style={{
-                    padding: '10px',
-                    borderRadius: '12px',
-                    border: type === 'question' ? '1px solid #00f2fe' : '1px solid rgba(255,255,255,0.05)',
-                    background: type === 'question' ? 'rgba(0, 242, 254, 0.1)' : 'rgba(255,255,255,0.02)',
-                    color: type === 'question' ? '#00f2fe' : '#9ca3af',
-                    fontWeight: 600,
-                    fontSize: '13px',
-                    cursor: 'pointer'
+                    padding: '8px',
+                    borderRadius: '2px',
+                    border: type === 'question' ? '1px solid #00f2fe' : '1px solid #262626',
+                    backgroundColor: type === 'question' ? '#171717' : '#0a0a0a',
+                    color: type === 'question' ? '#00f2fe' : '#737373',
+                    fontWeight: 700,
+                    fontSize: '10px',
+                    fontFamily: 'inherit',
+                    cursor: 'pointer',
+                    letterSpacing: '0.05em',
                   }}
                 >
-                  ❓ 問題 / 解答
+                  QUESTION_TYPE
                 </button>
                 <button
                   type="button"
                   onClick={() => setType('simple')}
                   style={{
-                    padding: '10px',
-                    borderRadius: '12px',
-                    border: type === 'simple' ? '1px solid #00f2fe' : '1px solid rgba(255,255,255,0.05)',
-                    background: type === 'simple' ? 'rgba(0, 242, 254, 0.1)' : 'rgba(255,255,255,0.02)',
-                    color: type === 'simple' ? '#00f2fe' : '#9ca3af',
-                    fontWeight: 600,
-                    fontSize: '13px',
-                    cursor: 'pointer'
+                    padding: '8px',
+                    borderRadius: '2px',
+                    border: type === 'simple' ? '1px solid #00f2fe' : '1px solid #262626',
+                    backgroundColor: type === 'simple' ? '#171717' : '#0a0a0a',
+                    color: type === 'simple' ? '#00f2fe' : '#737373',
+                    fontWeight: 700,
+                    fontSize: '10px',
+                    fontFamily: 'inherit',
+                    cursor: 'pointer',
+                    letterSpacing: '0.05em',
                   }}
                 >
-                  📝 シンプルメモ
+                  SIMPLE_MEMO
                 </button>
               </div>
 
-              <form onSubmit={handleAddMemo} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <form onSubmit={handleAddMemo} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '12px', color: '#9ca3af', fontWeight: 600, marginBottom: '6px' }}>
-                    {type === 'question' ? 'QUESTION' : 'TITLE'}
+                  <label style={{ display: 'block', fontSize: '9px', color: '#666666', fontWeight: 700, marginBottom: '4px', letterSpacing: '0.08em' }}>
+                    {type === 'question' ? 'QUESTION_TEXT' : 'MEMO_TITLE'}
                   </label>
                   <input
                     type="text"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder={type === 'question' ? '例: 大胸筋上部を狙う種目は？' : '例: 今日のメモ'}
+                    placeholder={type === 'question' ? 'e.g. 大胸筋上部を狙う種目は？' : 'e.g. 今日のメモ'}
                     required
                     style={{
                       width: '100%',
-                      padding: '12px 16px',
-                      borderRadius: '10px',
-                      background: 'rgba(0,0,0,0.3)',
-                      border: '1px solid rgba(255,255,255,0.1)',
+                      padding: '10px 12px',
+                      borderRadius: '2px',
+                      backgroundColor: '#0a0a0a',
+                      border: '1px solid #262626',
                       color: '#fff',
-                      fontSize: '14px',
-                      boxSizing: 'border-box'
+                      fontSize: '11px',
+                      fontFamily: 'inherit',
+                      boxSizing: 'border-box',
                     }}
                   />
                 </div>
 
                 {type === 'question' && (
                   <div>
-                    <label style={{ display: 'block', fontSize: '12px', color: '#9ca3af', fontWeight: 600, marginBottom: '6px' }}>
-                      ANSWER
+                    <label style={{ display: 'block', fontSize: '9px', color: '#666666', fontWeight: 700, marginBottom: '4px', letterSpacing: '0.08em' }}>
+                      ANSWER_TEXT
                     </label>
                     <textarea
                       value={answer}
                       onChange={(e) => setAnswer(e.target.value)}
-                      placeholder="例: インクライン・ベンチプレス"
+                      placeholder="e.g. インクライン・ベンチプレス"
                       rows={3}
                       style={{
                         width: '100%',
-                        padding: '12px 16px',
-                        borderRadius: '10px',
-                        background: 'rgba(0,0,0,0.3)',
-                        border: '1px solid rgba(255,255,255,0.1)',
+                        padding: '10px 12px',
+                        borderRadius: '2px',
+                        backgroundColor: '#0a0a0a',
+                        border: '1px solid #262626',
                         color: '#fff',
-                        fontSize: '14px',
-                        boxSizing: 'border-box'
+                        fontSize: '11px',
+                        fontFamily: 'inherit',
+                        boxSizing: 'border-box',
                       }}
                     />
                   </div>
@@ -865,82 +964,88 @@ export default function Home() {
                 <button
                   type="submit"
                   style={{
-                    padding: '14px',
-                    background: '#f3f4f6',
-                    color: '#090d16',
-                    border: 'none',
-                    borderRadius: '12px',
+                    padding: '10px',
+                    backgroundColor: '#00f2fe',
+                    color: '#0a0a0a',
+                    border: '1px solid #00f2fe',
+                    borderRadius: '2px',
                     fontWeight: 700,
-                    fontSize: '14px',
+                    fontSize: '11px',
+                    fontFamily: 'inherit',
                     cursor: 'pointer',
-                    marginTop: '8px'
+                    marginTop: '4px',
+                    letterSpacing: '0.08em',
                   }}
                 >
-                  追加 ＆ 忘却曲線通知を自動予約
+                  SAVE & SCHEDULE_PUSH
                 </button>
               </form>
             </div>
 
             <div>
-              <h3 style={{ fontSize: '16px', fontWeight: 700, marginBottom: '16px', color: '#e5e7eb' }}>
-                登録済みカードの管理
+              <h3 style={{ fontSize: '11px', fontWeight: 700, marginBottom: '12px', color: '#737373', letterSpacing: '0.08em' }}>
+                // CARD_MANAGEMENT
               </h3>
 
               {memos.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '32px 0', color: '#6b7280' }}>カードがありません</div>
+                <div style={{ textAlign: 'center', padding: '24px 0', color: '#525252', fontSize: '11px' }}>
+                  登録データが存在しません
+                </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {memos.map((memo) => (
                     <div
                       key={memo.id}
                       style={{
-                        background: 'rgba(17, 24, 39, 0.4)',
-                        border: '1px solid rgba(255, 255, 255, 0.05)',
-                        borderRadius: '16px',
-                        padding: '16px',
-                        backdropFilter: 'blur(8px)'
+                        backgroundColor: '#121212',
+                        border: '1px solid #262626',
+                        borderRadius: '4px',
+                        padding: '12px',
                       }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                        <span style={{ fontSize: '11px', color: '#6b7280' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        <span style={{ fontSize: '9px', color: '#525252' }}>
                           {new Date(memo.created_at).toLocaleDateString('ja-JP')}
                         </span>
-                        <div style={{ display: 'flex', gap: '8px' }}>
+                        <div style={{ display: 'flex', gap: '6px' }}>
                           <button
                             onClick={() => handleSchedulePush(memo)}
                             style={{
-                              padding: '4px 8px',
-                              fontSize: '11px',
+                              padding: '2px 6px',
+                              fontSize: '9px',
                               fontWeight: 700,
-                              background: 'rgba(0, 242, 254, 0.08)',
+                              backgroundColor: '#171717',
                               color: '#00f2fe',
-                              border: '1px solid rgba(0, 242, 254, 0.2)',
-                              borderRadius: '6px',
-                              cursor: 'pointer'
+                              border: '1px solid #262626',
+                              borderRadius: '2px',
+                              fontFamily: 'inherit',
+                              cursor: 'pointer',
+                              letterSpacing: '0.05em',
                             }}
                           >
-                            ⏱ 10秒後テスト
+                            TEST_10S
                           </button>
                           <button
                             onClick={() => handleDeleteMemo(memo.id)}
                             style={{
-                              padding: '4px 8px',
-                              fontSize: '11px',
-                              background: 'transparent',
+                              padding: '2px 6px',
+                              fontSize: '9px',
+                              backgroundColor: 'transparent',
                               color: '#ef4444',
-                              border: '1px solid rgba(239, 68, 68, 0.2)',
-                              borderRadius: '6px',
-                              cursor: 'pointer'
+                              border: '1px solid #331010',
+                              borderRadius: '2px',
+                              fontFamily: 'inherit',
+                              cursor: 'pointer',
                             }}
                           >
-                            削除
+                            DEL
                           </button>
                         </div>
                       </div>
 
-                      <div style={{ fontSize: '15px', fontWeight: 600, color: '#f3f4f6' }}>{memo.title}</div>
+                      <div style={{ fontSize: '12px', fontWeight: 400, color: '#e5e5e5' }}>{memo.title}</div>
                       {memo.answer && (
-                        <div style={{ fontSize: '13px', color: '#9ca3af', marginTop: '4px' }}>{memo.answer}</div>
+                        <div style={{ fontSize: '11px', color: '#737373', marginTop: '4px' }}>{memo.answer}</div>
                       )}
                     </div>
                   ))}
@@ -949,7 +1054,6 @@ export default function Home() {
             </div>
           </section>
         )}
-
       </main>
     </div>
   );

@@ -9,28 +9,25 @@ type PhysiqueModelProps = {
   xp: number;
 };
 
-// 筋肉質な人型（幾何学パーツで構成）
 function MuscularCharacter({ xp }: { xp: number }) {
   const groupRef = useRef<THREE.Group>(null);
 
-  // XPに応じて筋肉のボリューム（スケール）を計算 (最大 2.5倍)
   const muscleScale = Math.min(2.2, 1 + xp / 1000);
   const shoulderScale = Math.min(2.0, 1 + xp / 800);
   const chestScale = Math.min(2.0, 1 + xp / 700);
 
-  // XPに応じた発光・カラーリング (初心者: 青 ➔ 王者: 金色)
+  // 無機質なメタル/モノクロ調の発光
   const getBodyColor = () => {
-    if (xp >= 2500) return '#ffd700'; // 金
-    if (xp >= 1200) return '#ff4500'; // 赤オレンジ
-    if (xp >= 600) return '#a855f7';  // 紫
-    if (xp >= 200) return '#00f2fe';  // シアン
-    return '#64748b';                 // グレー
+    if (xp >= 2500) return '#ffffff'; // コールドホワイト
+    if (xp >= 1200) return '#00f2fe'; // シアン
+    if (xp >= 600) return '#94a3b8';  // プラチナシルバー
+    if (xp >= 200) return '#475569';  // メタルグレー
+    return '#1e293b';                 // ダークスチール
   };
 
-  // キャラクターをゆっくり自動回転
   useFrame((state, delta) => {
     if (groupRef.current) {
-      groupRef.current.rotation.y += delta * 0.5;
+      groupRef.current.rotation.y += delta * 0.4;
     }
   });
 
@@ -40,59 +37,59 @@ function MuscularCharacter({ xp }: { xp: number }) {
     <group ref={groupRef} position={[0, -0.5, 0]}>
       {/* 頭部 */}
       <mesh position={[0, 1.85, 0]}>
-        <sphereGeometry args={[0.22, 32, 32]} />
-        <meshStandardMaterial color={bodyColor} roughness={0.3} metalness={0.8} />
+        <sphereGeometry args={[0.22, 16, 16]} />
+        <meshStandardMaterial color={bodyColor} roughness={0.1} metalness={0.9} wireframe={false} />
       </mesh>
 
-      {/* 胴体（胸筋・腹筋） */}
+      {/* 胴体 */}
       <mesh position={[0, 1.25, 0]} scale={[1 * chestScale, 1, 0.8 * chestScale]}>
         <boxGeometry args={[0.5, 0.6, 0.3]} />
-        <meshStandardMaterial color={bodyColor} roughness={0.2} metalness={0.7} />
+        <meshStandardMaterial color={bodyColor} roughness={0.2} metalness={0.8} />
       </mesh>
 
-      {/* ウエスト (Vシェイプ強調) */}
+      {/* ウエスト */}
       <mesh position={[0, 0.8, 0]}>
-        <cylinderGeometry args={[0.22 * chestScale, 0.18, 0.35, 16]} />
-        <meshStandardMaterial color="#1e293b" roughness={0.5} />
+        <cylinderGeometry args={[0.22 * chestScale, 0.18, 0.35, 12]} />
+        <meshStandardMaterial color="#0f172a" roughness={0.8} />
       </mesh>
 
-      {/* 左肩（メロン肩） */}
+      {/* 左肩 */}
       <mesh position={[-0.38 * shoulderScale, 1.45, 0]} scale={[shoulderScale, shoulderScale, shoulderScale]}>
-        <sphereGeometry args={[0.18, 16, 16]} />
-        <meshStandardMaterial color={bodyColor} roughness={0.2} metalness={0.8} />
+        <sphereGeometry args={[0.18, 12, 12]} />
+        <meshStandardMaterial color={bodyColor} roughness={0.1} metalness={0.9} />
       </mesh>
 
-      {/* 右肩（メロン肩） */}
+      {/* 右肩 */}
       <mesh position={[0.38 * shoulderScale, 1.45, 0]} scale={[shoulderScale, shoulderScale, shoulderScale]}>
-        <sphereGeometry args={[0.18, 16, 16]} />
-        <meshStandardMaterial color={bodyColor} roughness={0.2} metalness={0.8} />
+        <sphereGeometry args={[0.18, 12, 12]} />
+        <meshStandardMaterial color={bodyColor} roughness={0.1} metalness={0.9} />
       </mesh>
 
-      {/* 左腕 (上腕二頭筋ダブルバイセップスポーズ風) */}
+      {/* 左腕 */}
       <mesh position={[-0.55 * muscleScale, 1.35, 0.1]} rotation={[0, 0, 0.8]} scale={[muscleScale, muscleScale, muscleScale]}>
-        <capsuleGeometry args={[0.1, 0.3, 8, 16]} />
-        <meshStandardMaterial color={bodyColor} roughness={0.3} />
+        <capsuleGeometry args={[0.1, 0.3, 6, 12]} />
+        <meshStandardMaterial color={bodyColor} roughness={0.2} metalness={0.8} />
       </mesh>
 
       {/* 右腕 */}
       <mesh position={[0.55 * muscleScale, 1.35, 0.1]} rotation={[0, 0, -0.8]} scale={[muscleScale, muscleScale, muscleScale]}>
-        <capsuleGeometry args={[0.1, 0.3, 8, 16]} />
-        <meshStandardMaterial color={bodyColor} roughness={0.3} />
+        <capsuleGeometry args={[0.1, 0.3, 6, 12]} />
+        <meshStandardMaterial color={bodyColor} roughness={0.2} metalness={0.8} />
       </mesh>
 
-      {/* 下半身・脚 */}
+      {/* 脚部 */}
       <mesh position={[-0.15, 0.3, 0]}>
-        <capsuleGeometry args={[0.11, 0.6, 8, 16]} />
-        <meshStandardMaterial color="#0f172a" />
+        <capsuleGeometry args={[0.11, 0.6, 6, 12]} />
+        <meshStandardMaterial color="#0f172a" roughness={0.9} />
       </mesh>
       <mesh position={[0.15, 0.3, 0]}>
-        <capsuleGeometry args={[0.11, 0.6, 8, 16]} />
-        <meshStandardMaterial color="#0f172a" />
+        <capsuleGeometry args={[0.11, 0.6, 6, 12]} />
+        <meshStandardMaterial color="#0f172a" roughness={0.9} />
       </mesh>
 
-      {/* 台座 (フィジークステージ) */}
+      {/* 無機質なグリッド台座 */}
       <mesh position={[0, -0.1, 0]}>
-        <cylinderGeometry args={[0.9, 1.1, 0.1, 32]} />
+        <cylinderGeometry args={[1.0, 1.0, 0.05, 16]} />
         <meshStandardMaterial color="#00f2fe" wireframe />
       </mesh>
     </group>
@@ -101,18 +98,16 @@ function MuscularCharacter({ xp }: { xp: number }) {
 
 export default function PhysiqueModel({ xp }: PhysiqueModelProps) {
   return (
-    <div style={{ width: '100%', height: '220px', position: 'relative' }}>
+    <div style={{ width: '100%', height: '200px', position: 'relative' }}>
       <Canvas camera={{ position: [0, 1.2, 3.2], fov: 45 }}>
-        <ambientLight intensity={0.7} />
-        <directionalLight position={[5, 5, 5]} intensity={1.5} />
-        <pointLight position={[-5, -5, -5]} intensity={0.5} color="#00f2fe" />
+        <ambientLight intensity={0.4} />
+        <directionalLight position={[5, 5, 5]} intensity={2.0} color="#ffffff" />
+        <pointLight position={[-5, -2, -2]} intensity={0.8} color="#00f2fe" />
         
-        {/* ふわふわ浮遊エフェクト */}
-        <Float speed={2} rotationIntensity={0.2} floatIntensity={0.5}>
+        <Float speed={1.5} rotationIntensity={0.1} floatIntensity={0.3}>
           <MuscularCharacter xp={xp} />
         </Float>
 
-        {/* ドラッグ操作で自由に360度回転可能 */}
         <OrbitControls enableZoom={false} maxPolarAngle={Math.PI / 2} minPolarAngle={Math.PI / 4} />
       </Canvas>
     </div>
