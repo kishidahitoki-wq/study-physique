@@ -29,7 +29,7 @@ const CAT_STAGES = [
 ];
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'review' | 'memos' | 'practice' | 'analytics'>('review');
+  const [activeTab, setActiveTab] = useState<'review' | 'memos' | 'practice' | 'analytics' | 'settings'>('review');
 
   const [memos, setMemos] = useState<Memo[]>([]);
   const [todayTasks, setTodayTasks] = useState<ReviewTask[]>([]);
@@ -39,10 +39,25 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isShuffled, setIsShuffled] = useState<boolean>(false);
 
-  // 🔄 【1問集中】復習(review)モード用インデックス
+  // 🎯 目標設定用ステート
+  const [targetTitle, setTargetTitle] = useState<string>('AWS 12冠 / 試験');
+  const [targetDate, setTargetDate] = useState<string>('');
+  const [isEditingTarget, setIsEditingTarget] = useState<boolean>(false);
+
+  // 💰 お金（コイン）と育成ステート
+  const [coins, setCoins] = useState<number>(0);
+  const [catLove, setCatLove] = useState<number>(0);
+  const [streak, setStreak] = useState<number>(0);
+  const [lastReviewDate, setLastReviewDate] = useState<string>('');
+  const [totalCompleted, setTotalCompleted] = useState<number>(0);
+  const [totalReset, setTotalReset] = useState<number>(0);
+  const [activityLog, setActivityLog] = useState<{ [date: string]: number }>({});
+  const [feedEffect, setFeedEffect] = useState<string | null>(null);
+
+  // 🔄 復習(review)モード用インデックス
   const [reviewIndex, setReviewIndex] = useState<number>(0);
 
-  // 🎮 【1問集中】一覧(practice)復習モード用ステート
+  // 🎮 一覧(practice)復習モード用ステート
   const [isQuizActive, setIsQuizActive] = useState<boolean>(false);
   const [quizQueue, setQuizQueue] = useState<Memo[]>([]);
   const [quizIndex, setQuizIndex] = useState<number>(0);
@@ -68,16 +83,6 @@ export default function Home() {
   const [tag, setTag] = useState('');
   const [, setLoading] = useState(true);
 
-  // 🐱 猫の育成ステート
-  const [foodStock, setFoodStock] = useState<number>(0);
-  const [catLove, setCatLove] = useState<number>(0);
-  const [streak, setStreak] = useState<number>(0);
-  const [lastReviewDate, setLastReviewDate] = useState<string>('');
-  const [totalCompleted, setTotalCompleted] = useState<number>(0);
-  const [totalReset, setTotalReset] = useState<number>(0);
-  const [activityLog, setActivityLog] = useState<{ [date: string]: number }>({});
-  const [feedEffect, setFeedEffect] = useState<string | null>(null);
-
   // Push通知ステート
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [, setStatus] = useState<string>('準備中');
@@ -85,30 +90,35 @@ export default function Home() {
   useEffect(() => {
     fetchData();
 
-    const savedFood = localStorage.getItem('cat_food_stock');
+    // ローカルストレージからの読み込み
+    const savedCoins = localStorage.getItem('cat_coins');
     const savedLove = localStorage.getItem('cat_love');
     const savedStreak = localStorage.getItem('physique_streak');
     const savedLastDate = localStorage.getItem('physique_last_date');
     const savedCompleted = localStorage.getItem('physique_total_completed');
     const savedReset = localStorage.getItem('physique_total_reset');
     const savedLog = localStorage.getItem('physique_activity_log');
+    const savedTargetTitle = localStorage.getItem('target_title');
+    const savedTargetDate = localStorage.getItem('target_date');
 
-    if (savedFood) setFoodStock(parseInt(savedFood, 10));
+    if (savedCoins) setCoins(parseInt(savedCoins, 10));
     if (savedLove) setCatLove(parseInt(savedLove, 10));
     if (savedStreak) setStreak(parseInt(savedStreak, 10));
     if (savedLastDate) setLastReviewDate(savedLastDate);
     if (savedCompleted) setTotalCompleted(parseInt(savedCompleted, 10));
     if (savedReset) setTotalReset(parseInt(savedReset, 10));
     if (savedLog) setActivityLog(JSON.parse(savedLog));
+    if (savedTargetTitle) setTargetTitle(savedTargetTitle);
+    if (savedTargetDate) setTargetDate(savedTargetDate);
   }, []);
 
   const handleReviewReward = (isSuccess: boolean) => {
     const todayStr = new Date().toISOString().split('T')[0];
 
     if (isSuccess) {
-      const newFood = foodStock + 1;
-      setFoodStock(newFood);
-      localStorage.setItem('cat_food_stock', newFood.toString());
+      const newCoins = coins + 50; // 正解すると50コイン獲得
+      setCoins(newCoins);
+      localStorage.setItem('cat_coins', newCoins.toString());
 
       const newComp = totalCompleted + 1;
       setTotalCompleted(newComp);
@@ -133,20 +143,21 @@ export default function Home() {
   };
 
   const handleFeedCat = () => {
-    if (foodStock <= 0) {
-      alert('キャットフードがありません！復習を完了してゲットしましょう 🐟');
+    const cost = 100;
+    if (coins < cost) {
+      alert('コインが足りません！復習を完了してコインを稼ぎましょう 💰');
       return;
     }
 
-    const newFood = foodStock - 1;
-    const newLove = catLove + 25;
+    const newCoins = coins - cost;
+    const newLove = catLove + 30;
 
-    setFoodStock(newFood);
+    setCoins(newCoins);
     setCatLove(newLove);
-    localStorage.setItem('cat_food_stock', newFood.toString());
+    localStorage.setItem('cat_coins', newCoins.toString());
     localStorage.setItem('cat_love', newLove.toString());
 
-    setFeedEffect('モグモグ... 🐟 (+25 LOVE)');
+    setFeedEffect('豪華なごはんをあげた！ 🐟 (+30 LOVE)');
     setTimeout(() => setFeedEffect(null), 2500);
   };
 
@@ -156,6 +167,18 @@ export default function Home() {
       if (catLove >= stage.minLove) current = stage;
     }
     return current;
+  };
+
+  // 🎯 残り日数の計算
+  const getRemainingDays = () => {
+    if (!targetDate) return null;
+    const target = new Date(targetDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    target.setHours(0, 0, 0, 0);
+    const diffTime = target.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
   };
 
   const fetchData = async () => {
@@ -284,7 +307,6 @@ export default function Home() {
     }
   };
 
-  // 復習の完了処理（1問完了時）
   const handleCompleteReview = async (scheduleId: string) => {
     setShowCurrentAnswer(false);
     setDragOffset({ x: 0, y: 0 });
@@ -305,7 +327,6 @@ export default function Home() {
     }
   };
 
-  // 復習のリセット処理（忘れた場合）
   const handleResetReview = async (task: ReviewTask) => {
     setShowCurrentAnswer(false);
     setDragOffset({ x: 0, y: 0 });
@@ -377,7 +398,6 @@ export default function Home() {
     }
   };
 
-  // 🎮 タグ別クイズモード（一問集中）の開始ハンドラー
   const handleStartQuiz = () => {
     const targetMemos = selectedTag === 'ALL' 
       ? filteredMemos 
@@ -403,7 +423,7 @@ export default function Home() {
     if (quizIndex < quizQueue.length - 1) {
       setQuizIndex((prev) => prev + 1);
     } else {
-      setQuizIndex(quizQueue.length); // 完了
+      setQuizIndex(quizQueue.length);
     }
   };
 
@@ -423,7 +443,6 @@ export default function Home() {
     }
   };
 
-  // 📱 指の動作にリアルタイム連動するタッチ/ドラッグイベント制御
   const handlePointerDown = (e: React.PointerEvent) => {
     setIsDragging(true);
     isMoved.current = false;
@@ -458,9 +477,8 @@ export default function Home() {
     if (!isDragging) return;
     setIsDragging(false);
 
-    const threshold = 100; // スワイプ確定のしきい値(px)
+    const threshold = 100;
 
-    // タップ判定（移動量が小さい場合）
     if (!isMoved.current) {
       setShowCurrentAnswer((prev) => !prev);
       setDragOffset({ x: 0, y: 0 });
@@ -468,7 +486,6 @@ export default function Home() {
     }
 
     if (dragOffset.x > threshold) {
-      // 👉 右スワイプ（覚えた）
       setFlyOutDirection('right');
       setTimeout(() => {
         if (mode === 'review' && taskOrMemo) {
@@ -478,7 +495,6 @@ export default function Home() {
         }
       }, 200);
     } else if (dragOffset.x < -threshold) {
-      // 👈 左スワイプ（忘れた）
       setFlyOutDirection('left');
       setTimeout(() => {
         if (mode === 'review' && taskOrMemo) {
@@ -488,7 +504,6 @@ export default function Home() {
         }
       }, 200);
     } else {
-      // 元の位置に戻る
       setDragOffset({ x: 0, y: 0 });
     }
   };
@@ -525,6 +540,7 @@ export default function Home() {
     selectedTag === 'ALL' ? todayTasks : todayTasks.filter((t) => t.memo.tag === selectedTag);
 
   const currentCatStage = getCurrentCatStage();
+  const remainingDays = getRemainingDays();
 
   const getPast7Days = () => {
     const days = [];
@@ -536,7 +552,6 @@ export default function Home() {
     return days;
   };
 
-  // スワイプ時のCardスタイルを動적生成
   const getCardTransformStyle = () => {
     if (flyOutDirection === 'right') {
       return {
@@ -553,7 +568,7 @@ export default function Home() {
       };
     }
 
-    const rotate = dragOffset.x * 0.08; // ドラッグ量に応じて自然に傾く
+    const rotate = dragOffset.x * 0.08;
     return {
       transform: `translate(${dragOffset.x}px, ${dragOffset.y * 0.3}px) rotate(${rotate}deg)`,
       transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.27)',
@@ -641,6 +656,45 @@ export default function Home() {
 
       {/* Main Content */}
       <main style={{ maxWidth: '480px', margin: '0 auto' }}>
+        
+        {/* ── 🎯 TARGET COUNTDOWN BANNER (目標設定・残り日数) ── */}
+        <div
+          style={{
+            backgroundColor: '#0f172a',
+            color: '#ffffff',
+            borderRadius: '20px',
+            padding: '16px 20px',
+            marginBottom: '20px',
+            boxShadow: '0 10px 20px -5px rgba(15, 23, 42, 0.2)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <div>
+            <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase' }}>
+              🎯 目標までのカウントダウン
+            </div>
+            <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>
+              {targetTitle}
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            {remainingDays !== null ? (
+              <div style={{ fontSize: '20px', fontWeight: 800, color: '#38bdf8' }}>
+                あと <span style={{ fontSize: '26px' }}>{remainingDays}</span> 日
+              </div>
+            ) : (
+              <button
+                onClick={() => setActiveTab('settings')}
+                style={{ fontSize: '11px', color: '#38bdf8', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}
+              >
+                + 日付を設定
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* ── 🐱 CAT CARD ── */}
         <div
           style={{
@@ -698,9 +752,9 @@ export default function Home() {
             </div>
 
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>キャットフード</div>
-              <div style={{ fontSize: '16px', fontWeight: 800, color: '#10b981', marginTop: '2px' }}>
-                🐟 {foodStock} 缶
+              <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>所持コイン（資金）</div>
+              <div style={{ fontSize: '16px', fontWeight: 800, color: '#f59e0b', marginTop: '2px' }}>
+                🪙 {coins} G
               </div>
             </div>
           </div>
@@ -711,18 +765,18 @@ export default function Home() {
               width: '100%',
               marginTop: '16px',
               padding: '14px',
-              backgroundColor: foodStock > 0 ? '#10b981' : '#e2e8f0',
-              color: foodStock > 0 ? '#ffffff' : '#94a3b8',
+              backgroundColor: coins >= 100 ? '#f59e0b' : '#e2e8f0',
+              color: coins >= 100 ? '#ffffff' : '#94a3b8',
               border: 'none',
               borderRadius: '16px',
               fontWeight: 700,
               fontSize: '14px',
-              cursor: foodStock > 0 ? 'pointer' : 'not-allowed',
-              boxShadow: foodStock > 0 ? '0 10px 20px -3px rgba(16, 185, 129, 0.3)' : 'none',
+              cursor: coins >= 100 ? 'pointer' : 'not-allowed',
+              boxShadow: coins >= 100 ? '0 10px 20px -3px rgba(245, 158, 11, 0.3)' : 'none',
               transition: 'all 0.2s ease',
             }}
           >
-            ごはんをあげる（1缶消費）
+            ごちそうをあげる（100コイン消費）
           </button>
 
           <div style={{ marginTop: '16px' }}>
@@ -735,7 +789,7 @@ export default function Home() {
                 style={{
                   height: '100%',
                   width: `${Math.min(100, (catLove / 1000) * 100)}%`,
-                  backgroundColor: '#10b981',
+                  backgroundColor: '#f59e0b',
                   borderRadius: '999px',
                   transition: 'width 0.4s ease-out',
                 }}
@@ -748,8 +802,8 @@ export default function Home() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
-            gap: '6px',
+            gridTemplateColumns: 'repeat(5, 1fr)',
+            gap: '4px',
             backgroundColor: '#e2e8f0',
             padding: '4px',
             borderRadius: '16px',
@@ -757,10 +811,11 @@ export default function Home() {
           }}
         >
           {[
-            { id: 'review', label: `復習 (${todayTasks.length})` },
+            { id: 'review', label: `復習(${todayTasks.length})` },
             { id: 'practice', label: '一覧' },
             { id: 'analytics', label: '記録' },
             { id: 'memos', label: '作成' },
+            { id: 'settings', label: '目標' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -778,7 +833,7 @@ export default function Home() {
                 backgroundColor: activeTab === tab.id ? '#ffffff' : 'transparent',
                 color: activeTab === tab.id ? '#0f172a' : '#64748b',
                 fontWeight: activeTab === tab.id ? 700 : 600,
-                fontSize: '12px',
+                fontSize: '11px',
                 cursor: 'pointer',
                 boxShadow: activeTab === tab.id ? '0 4px 6px -1px rgba(0, 0, 0, 0.05)' : 'none',
                 transition: 'all 0.15s ease',
@@ -849,7 +904,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── TAB 1: 復習画面（1問集中＋スワイプ連動付きカード） ── */}
+        {/* ── TAB 1: 復習画面 ── */}
         {activeTab === 'review' && (
           <section>
             {filteredTodayTasks.length === 0 ? (
@@ -866,7 +921,7 @@ export default function Home() {
                 <div style={{ fontSize: '15px', fontWeight: 700, color: '#10b981', marginBottom: '4px' }}>
                   🎉 すべての復習が完了しました！
                 </div>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>キャットフードを獲得しました。猫に餌をあげましょう！</div>
+                <div style={{ fontSize: '12px', color: '#64748b' }}>コインを獲得しました。猫を育成しましょう！</div>
               </div>
             ) : (
               <div>
@@ -896,7 +951,6 @@ export default function Home() {
                         ...cardStyle,
                       }}
                     >
-                      {/* スワイプ中の判定バッジ（オーバーレイ表示） */}
                       {dragOffset.x > 30 && (
                         <div
                           style={{
@@ -936,7 +990,6 @@ export default function Home() {
                         </div>
                       )}
 
-                      {/* ステータスバー */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                         <span
                           style={{
@@ -967,7 +1020,6 @@ export default function Home() {
                         )}
                       </div>
 
-                      {/* メモ・問題カード本文 */}
                       <div
                         style={{
                           backgroundColor: '#f8fafc',
@@ -1014,7 +1066,6 @@ export default function Home() {
                         )}
                       </div>
 
-                      {/* ガイド＆ボタン操作 */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                         <button
                           onClick={(e) => {
@@ -1032,7 +1083,7 @@ export default function Home() {
                             cursor: 'pointer',
                           }}
                         >
-                          👈 忘れた (左スワイプ)
+                          👈 忘れた (左)
                         </button>
 
                         <button
@@ -1052,7 +1103,7 @@ export default function Home() {
                             boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
                           }}
                         >
-                          覚えた (右スワイプ 👉)
+                          覚えた (右 👉)
                         </button>
                       </div>
                     </div>
@@ -1063,10 +1114,9 @@ export default function Home() {
           </section>
         )}
 
-        {/* ── TAB 2: 全メモ一覧画面（一覧 ➔ 一問一答演習） ── */}
+        {/* ── TAB 2: 一覧画面 ── */}
         {activeTab === 'practice' && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* 🎮 一問集中的な演習モード画面 */}
             {isQuizActive ? (
               <div>
                 {quizIndex < quizQueue.length ? (
@@ -1094,46 +1144,6 @@ export default function Home() {
                           ...cardStyle,
                         }}
                       >
-                        {/* スワイプ中の判定バッジ（オーバーレイ表示） */}
-                        {dragOffset.x > 30 && (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              top: 16,
-                              left: 16,
-                              border: '3px solid #10b981',
-                              color: '#10b981',
-                              fontWeight: 800,
-                              fontSize: '14px',
-                              padding: '4px 12px',
-                              borderRadius: '8px',
-                              transform: 'rotate(-15deg)',
-                              zIndex: 20,
-                            }}
-                          >
-                            覚えた 👉
-                          </div>
-                        )}
-                        {dragOffset.x < -30 && (
-                          <div
-                            style={{
-                              position: 'absolute',
-                              top: 16,
-                              right: 16,
-                              border: '3px solid #ef4444',
-                              color: '#ef4444',
-                              fontWeight: 800,
-                              fontSize: '14px',
-                              padding: '4px 12px',
-                              borderRadius: '8px',
-                              transform: 'rotate(15deg)',
-                              zIndex: 20,
-                            }}
-                          >
-                            👈 忘れた
-                          </div>
-                        )}
-
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                           <span
                             style={{
@@ -1165,7 +1175,6 @@ export default function Home() {
                           </button>
                         </div>
 
-                        {/* カード本体 */}
                         <div
                           style={{
                             backgroundColor: '#f8fafc',
@@ -1212,7 +1221,6 @@ export default function Home() {
                           )}
                         </div>
 
-                        {/* 操作ボタン */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                           <button
                             onClick={(e) => {
@@ -1230,7 +1238,7 @@ export default function Home() {
                               cursor: 'pointer',
                             }}
                           >
-                            👈 忘れた (左スワイプ)
+                            👈 忘れた (左)
                           </button>
                           <button
                             onClick={(e) => {
@@ -1249,7 +1257,7 @@ export default function Home() {
                               boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
                             }}
                           >
-                            覚えた (右スワイプ 👉)
+                            覚えた (右 👉)
                           </button>
                         </div>
                       </div>
@@ -1289,7 +1297,6 @@ export default function Home() {
                 )}
               </div>
             ) : (
-              /* 通常の一覧表示モード */
               <>
                 <button
                   onClick={handleStartQuiz}
@@ -1463,9 +1470,9 @@ export default function Home() {
               </div>
 
               <div style={{ backgroundColor: '#ffffff', padding: '16px', borderRadius: '20px', boxShadow: '0 4px 10px rgba(0,0,0,0.02)' }}>
-                <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>獲得フード累計</div>
-                <div style={{ fontSize: '22px', fontWeight: 800, color: '#10b981', marginTop: '4px' }}>
-                  🐟 {totalCompleted} 缶
+                <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>総獲得コイン</div>
+                <div style={{ fontSize: '22px', fontWeight: 800, color: '#f59e0b', marginTop: '4px' }}>
+                  🪙 {totalCompleted * 50} G
                 </div>
               </div>
             </div>
@@ -1628,31 +1635,6 @@ export default function Home() {
                       boxSizing: 'border-box',
                     }}
                   />
-                  {allTags.length > 0 && (
-                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px', alignItems: 'center' }}>
-                      <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>候補:</span>
-                      {allTags.map((t) => (
-                        <button
-                          key={t}
-                          type="button"
-                          onClick={() => setTag(t)}
-                          style={{
-                            padding: '3px 8px',
-                            borderRadius: '6px',
-                            border: '1px solid #e2e8f0',
-                            backgroundColor: tag.toUpperCase() === t ? '#10b981' : '#ffffff',
-                            color: tag.toUpperCase() === t ? '#ffffff' : '#64748b',
-                            fontSize: '10px',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            transition: 'all 0.15s ease',
-                          }}
-                        >
-                          #{t}
-                        </button>
-                      ))}
-                    </div>
-                  )}
                 </div>
 
                 <button
@@ -1726,6 +1708,92 @@ export default function Home() {
             </div>
           </section>
         )}
+
+        {/* ── TAB 5: 目標設定画面 ── */}
+        {activeTab === 'settings' && (
+          <section>
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '20px',
+                padding: '20px',
+                boxShadow: '0 10px 20px -5px rgba(0,0,0,0.03)',
+                border: '1px solid #f1f5f9',
+              }}
+            >
+              <h2 style={{ fontSize: '14px', fontWeight: 700, marginTop: 0, marginBottom: '16px', color: '#0f172a' }}>
+                目標と試験日の設定
+              </h2>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 600, marginBottom: '6px' }}>
+                    目標タイトル
+                  </label>
+                  <input
+                    type="text"
+                    value={targetTitle}
+                    onChange={(e) => {
+                      setTargetTitle(e.target.value);
+                      localStorage.setItem('target_title', e.target.value);
+                    }}
+                    placeholder="例: AWS 12冠達成 / 資格試験"
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      borderRadius: '12px',
+                      backgroundColor: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      color: '#0f172a',
+                      fontSize: '13px',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 600, marginBottom: '6px' }}>
+                    目標日・試験日
+                  </label>
+                  <input
+                    type="date"
+                    value={targetDate}
+                    onChange={(e) => {
+                      setTargetDate(e.target.value);
+                      localStorage.setItem('target_date', e.target.value);
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      borderRadius: '12px',
+                      backgroundColor: '#f8fafc',
+                      border: '1px solid #e2e8f0',
+                      color: '#0f172a',
+                      fontSize: '13px',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    backgroundColor: '#eff6ff',
+                    padding: '14px',
+                    borderRadius: '12px',
+                    fontSize: '12px',
+                    color: '#1e40af',
+                    marginTop: '8px',
+                  }}
+                >
+                  💡 復習を完了してコイン（🪙）を貯めると、猫の育成をよりリッチに進められるようになります！
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
       </main>
     </div>
   );
