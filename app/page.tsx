@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { FORGETTING_STAGES, calculateRandomScheduleTime } from '@/lib/scheduler';
 import dynamic from 'next/dynamic';
 
-// 3Dコンポーネントをクライアント限定で動的読み込み
+// 3Dコンポーネント（猫モデル等）をクライアント限定で動的読み込み
 const PhysiqueModel = dynamic(() => import('@/components/PhysiqueModel'), {
   ssr: false,
   loading: () => (
@@ -21,7 +21,7 @@ const PhysiqueModel = dynamic(() => import('@/components/PhysiqueModel'), {
         letterSpacing: '0.15em',
       }}
     >
-      [ LOADING_3D_MODEL... ]
+      [ LOADING_CAT_MODEL... ]
     </div>
   ),
 });
@@ -41,13 +41,13 @@ type ReviewTask = {
   memo: Memo;
 };
 
-// フィジークランク定義
-const RANKS = [
-  { name: 'LV.1 NOVICE', minXp: 0, code: 'RANK-D', color: '#334155' },
-  { name: 'LV.2 AMATEUR', minXp: 200, code: 'RANK-C', color: '#64748b' },
-  { name: 'LV.3 ADVANCED', minXp: 600, code: 'RANK-B', color: '#94a3b8' },
-  { name: 'LV.4 PRO_ATHLETE', minXp: 1200, code: 'RANK-A', color: '#00f2fe' },
-  { name: 'LV.5 OLYMPIA', minXp: 2500, code: 'RANK-S', color: '#ffffff' },
+// 猫の成長ランク定義
+const CAT_STAGES = [
+  { level: 1, name: 'KITTEN // LV.1', minLove: 0, status: 'HUNGRY' },
+  { level: 2, name: 'CAT // LV.2', minLove: 100, status: 'SATISFIED' },
+  { level: 3, name: 'CYBER_CAT // LV.3', minLove: 300, status: 'HAPPY' },
+  { level: 4, name: 'LORD_CAT // LV.4', minLove: 600, status: 'PUMPED' },
+  { level: 5, name: 'GOD_CAT // LV.MAX', minLove: 1000, status: 'DIVINE' },
 ];
 
 export default function Home() {
@@ -68,30 +68,36 @@ export default function Home() {
   const [tag, setTag] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // フィジーク＆ゲーム要素 & アナリティクス用データ（ローカルストレージ）
-  const [xp, setXp] = useState<number>(0);
+  // 🐱 猫の育成 & ゲーミフィケーションステート（ローカルストレージ）
+  const [foodStock, setFoodStock] = useState<number>(0); // キャットフード在庫
+  const [catLove, setCatLove] = useState<number>(0);     // 親密度（Expの代わり）
   const [streak, setStreak] = useState<number>(0);
   const [lastReviewDate, setLastReviewDate] = useState<string>('');
   const [totalCompleted, setTotalCompleted] = useState<number>(0);
   const [totalReset, setTotalReset] = useState<number>(0);
   const [activityLog, setActivityLog] = useState<{ [date: string]: number }>({});
 
+  // アニメーション用演出エフェクト
+  const [feedEffect, setFeedEffect] = useState<string | null>(null);
+
   // Push通知ステート
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [status, setStatus] = useState<string>('INITIALIZING...');
 
-  // 初回起動時データ取得 ＆ ゲーミフィケーションステート読み込み
+  // 初回起動時データ取得 ＆ 猫ステート読み込み
   useEffect(() => {
     fetchData();
 
-    const savedXp = localStorage.getItem('physique_xp');
+    const savedFood = localStorage.getItem('cat_food_stock');
+    const savedLove = localStorage.getItem('cat_love');
     const savedStreak = localStorage.getItem('physique_streak');
     const savedLastDate = localStorage.getItem('physique_last_date');
     const savedCompleted = localStorage.getItem('physique_total_completed');
     const savedReset = localStorage.getItem('physique_total_reset');
     const savedLog = localStorage.getItem('physique_activity_log');
 
-    if (savedXp) setXp(parseInt(savedXp, 10));
+    if (savedFood) setFoodStock(parseInt(savedFood, 10));
+    if (savedLove) setCatLove(parseInt(savedLove, 10));
     if (savedStreak) setStreak(parseInt(savedStreak, 10));
     if (savedLastDate) setLastReviewDate(savedLastDate);
     if (savedCompleted) setTotalCompleted(parseInt(savedCompleted, 10));
@@ -99,16 +105,16 @@ export default function Home() {
     if (savedLog) setActivityLog(JSON.parse(savedLog));
   }, []);
 
-  // XP・ストリーク・アクティビティログの更新と保存
-  const addXpAndCheckStreak = (amount: number, isSuccess: boolean) => {
-    const newXp = xp + amount;
-    setXp(newXp);
-    localStorage.setItem('physique_xp', newXp.toString());
-
+  // 復習完了時のフード獲得 ＆ ストリーク処理
+  const handleReviewReward = (isSuccess: boolean) => {
     const todayStr = new Date().toISOString().split('T')[0];
 
-    // 成績ログ記録
     if (isSuccess) {
+      // 復習完了でキャットフード +1 獲得！
+      const newFood = foodStock + 1;
+      setFoodStock(newFood);
+      localStorage.setItem('cat_food_stock', newFood.toString());
+
       const newComp = totalCompleted + 1;
       setTotalCompleted(newComp);
       localStorage.setItem('physique_total_completed', newComp.toString());
@@ -133,11 +139,31 @@ export default function Home() {
     }
   };
 
-  // 現在のランク算出
-  const getCurrentRank = () => {
-    let current = RANKS[0];
-    for (const rank of RANKS) {
-      if (xp >= rank.minXp) current = rank;
+  // 🐱 猫に餌をあげるアクション
+  const handleFeedCat = () => {
+    if (foodStock <= 0) {
+      alert('キャットフードがありません！復習（REVIEW）を完了してフードを獲得してください 🐟');
+      return;
+    }
+
+    const newFood = foodStock - 1;
+    const newLove = catLove + 25; // 1回餌をあげると親密度+25
+
+    setFoodStock(newFood);
+    setCatLove(newLove);
+    localStorage.setItem('cat_food_stock', newFood.toString());
+    localStorage.setItem('cat_love', newLove.toString());
+
+    // 演出表示
+    setFeedEffect('OM_NOM_NOM! 🐟 (+25 LOVE)');
+    setTimeout(() => setFeedEffect(null), 2500);
+  };
+
+  // 現在の猫レベル算出
+  const getCurrentCatStage = () => {
+    let current = CAT_STAGES[0];
+    for (const stage of CAT_STAGES) {
+      if (catLove >= stage.minLove) current = stage;
     }
     return current;
   };
@@ -255,9 +281,9 @@ export default function Home() {
 
       if (subscription) {
         const pushTitle =
-          newMemo.type === 'question' ? `【復習タイム】${newMemo.title}` : `【メモ】${newMemo.title}`;
+          newMemo.type === 'question' ? `【猫が空腹です】${newMemo.title}` : `【メモ】${newMemo.title}`;
         const pushBody =
-          newMemo.type === 'question' ? `正解を確認して筋肉をパンプさせよう！` : newMemo.title;
+          newMemo.type === 'question' ? `復習を完了してキャットフードを獲得しよう！` : newMemo.title;
 
         for (const item of scheduleInserts) {
           fetch('/api/schedule-forgetting', {
@@ -278,11 +304,11 @@ export default function Home() {
       setAnswer('');
       setTag('');
       fetchTodayTasks();
-      alert('カードを作成し、忘却曲線の通知予約を完了しました！');
+      alert('カードを作成し、猫の通知予約を完了しました！');
     }
   };
 
-  // 復習完了（完璧！）
+  // 復習完了（キャットフード獲得！）
   const handleCompleteReview = async (scheduleId: string) => {
     const { error } = await supabase
       .from('schedules')
@@ -293,11 +319,11 @@ export default function Home() {
       alert('更新に失敗しました: ' + error.message);
     } else {
       setTodayTasks(todayTasks.filter((task) => task.schedule_id !== scheduleId));
-      addXpAndCheckStreak(50, true);
+      handleReviewReward(true);
     }
   };
 
-  // 復習リセット（もう一歩・うろ覚え）
+  // 復習リセット
   const handleResetReview = async (task: ReviewTask) => {
     const { error } = await supabase
       .from('schedules')
@@ -312,7 +338,7 @@ export default function Home() {
       alert('更新に失敗しました: ' + error.message);
     } else {
       alert('忘却ステージを Stage 1 にリセットしました！');
-      addXpAndCheckStreak(0, false);
+      handleReviewReward(false);
       fetchTodayTasks();
     }
   };
@@ -364,7 +390,7 @@ export default function Home() {
     }
   };
 
-  // 全タグのリスト（重用排除）
+  // 全タグのリスト
   const allTags = Array.from(
     new Set(
       memos
@@ -378,7 +404,7 @@ export default function Home() {
   const filteredTodayTasks =
     selectedTag === 'ALL' ? todayTasks : todayTasks.filter((t) => t.memo.tag === selectedTag);
 
-  const currentRank = getCurrentRank();
+  const currentCatStage = getCurrentCatStage();
 
   // 過去7日間の日付配列生成 (アナリティクス用)
   const getPast7Days = () => {
@@ -435,7 +461,7 @@ export default function Home() {
               color: '#ffffff',
             }}
           >
-            PHYSIQUE_CORE // V1.1
+            CYBER_CAT // V2.0
           </span>
         </div>
 
@@ -477,7 +503,7 @@ export default function Home() {
 
       {/* Main Content Container */}
       <main style={{ maxWidth: '540px', margin: '0 auto' }}>
-        {/* ── 🏆 3D MODEL & STATUS MONITOR ── */}
+        {/* ── 🐱 CAT OBSERVATION & FEEDING STATION ── */}
         <div
           style={{
             backgroundColor: '#121212',
@@ -498,13 +524,36 @@ export default function Home() {
               letterSpacing: '0.1em',
             }}
           >
-            [ MODEL_VIEWER ]
+            [ CAT_MONITOR ]
           </div>
 
-          {/* 3D Model View */}
-          <PhysiqueModel xp={xp} />
+          {/* 猫モデルビュー（既存の PhysiqueModel をそのまま流用または猫用コンポーネントに差し替え） */}
+          <PhysiqueModel xp={catLove} />
 
-          {/* Status Monitor */}
+          {/* 餌やりポップアップ演出 */}
+          {feedEffect && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '40%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                backgroundColor: '#00f2fe',
+                color: '#0a0a0a',
+                padding: '8px 16px',
+                fontWeight: 700,
+                fontSize: '12px',
+                borderRadius: '2px',
+                letterSpacing: '0.1em',
+                boxShadow: '0 0 20px rgba(0, 242, 254, 0.6)',
+                zIndex: 10,
+              }}
+            >
+              {feedEffect}
+            </div>
+          )}
+
+          {/* Status Monitor & Feed Action */}
           <div
             style={{
               display: 'grid',
@@ -517,24 +566,49 @@ export default function Home() {
           >
             <div>
               <div style={{ fontSize: '9px', color: '#666666', letterSpacing: '0.1em', marginBottom: '2px' }}>
-                CURRENT_RANK
+                CAT_STAGE
               </div>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: currentRank.color, letterSpacing: '0.05em' }}>
-                {currentRank.name}
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#00f2fe', letterSpacing: '0.05em' }}>
+                {currentCatStage.name}
               </div>
             </div>
 
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: '9px', color: '#666666', letterSpacing: '0.1em', marginBottom: '2px' }}>
-                STREAK_LOG
+                FOOD_STOCK
               </div>
-              <div style={{ fontSize: '12px', fontWeight: 700, color: '#ffffff', letterSpacing: '0.05em' }}>
-                {streak} DAYS_ACTIVE
+              <div style={{ fontSize: '13px', fontWeight: 700, color: foodStock > 0 ? '#10b981' : '#ef4444', letterSpacing: '0.05em' }}>
+                🐟 {foodStock} CANS
               </div>
             </div>
           </div>
 
-          {/* XP Gauge Bar */}
+          {/* 餌やり実行ボタン */}
+          <button
+            onClick={handleFeedCat}
+            style={{
+              width: '100%',
+              marginTop: '12px',
+              padding: '10px',
+              backgroundColor: foodStock > 0 ? '#171717' : '#0a0a0a',
+              color: foodStock > 0 ? '#00f2fe' : '#525252',
+              border: foodStock > 0 ? '1px solid #00f2fe' : '1px solid #262626',
+              borderRadius: '2px',
+              fontWeight: 700,
+              fontSize: '11px',
+              fontFamily: 'inherit',
+              cursor: foodStock > 0 ? 'pointer' : 'not-allowed',
+              letterSpacing: '0.1em',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+            }}
+          >
+            <span>[ 🍽️ FEED_CAT (-1 CAN) ]</span>
+          </button>
+
+          {/* LOVE Gauge Bar */}
           <div style={{ marginTop: '12px' }}>
             <div
               style={{
@@ -546,14 +620,14 @@ export default function Home() {
                 letterSpacing: '0.08em',
               }}
             >
-              <span>XP: {xp} / 2500</span>
-              <span>{Math.floor((xp / 2500) * 100)}%</span>
+              <span>LOVE: {catLove} / 1000</span>
+              <span>{Math.floor((catLove / 1000) * 100)}%</span>
             </div>
             <div style={{ width: '100%', height: '3px', backgroundColor: '#1a1a1a' }}>
               <div
                 style={{
                   height: '100%',
-                  width: `${Math.min(100, (xp / 2500) * 100)}%`,
+                  width: `${Math.min(100, (catLove / 1000) * 100)}%`,
                   backgroundColor: '#00f2fe',
                   transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 }}
@@ -648,7 +722,7 @@ export default function Home() {
           </button>
         </div>
 
-        {/* ── 🏷️ TAG FILTER BAR (REVIEW / PRACTICE TAB ONLY) ── */}
+        {/* ── 🏷️ TAG FILTER BAR ── */}
         {(activeTab === 'review' || activeTab === 'practice') && allTags.length > 0 && (
           <div
             style={{
@@ -732,7 +806,7 @@ export default function Home() {
                 <div style={{ fontSize: '11px', color: '#10b981', fontWeight: 700, marginBottom: '6px', letterSpacing: '0.1em' }}>
                   [ STATUS: ALL_CLEAR ]
                 </div>
-                <div style={{ fontSize: '11px' }}>該当する復習タスクはありません。</div>
+                <div style={{ fontSize: '11px' }}>本日の復習完了！フードを獲得しました 🐟</div>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -838,7 +912,7 @@ export default function Home() {
                           letterSpacing: '0.05em',
                         }}
                       >
-                        COMPLETE (+50XP)
+                        COMPLETE (+1 🐟)
                       </button>
                     </div>
                   </div>
@@ -973,7 +1047,7 @@ export default function Home() {
         )}
 
         {/* ========================================================= */}
-        {/* TAB 3: 📊 パフォーマンステキスト・アナリティクス画面 (NEW) */}
+        {/* TAB 3: 📊 パフォーマンステキスト・アナリティクス画面 */}
         {/* ========================================================= */}
         {activeTab === 'analytics' && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -1002,21 +1076,21 @@ export default function Home() {
 
               <div style={{ backgroundColor: '#121212', border: '1px solid #262626', padding: '12px', borderRadius: '4px' }}>
                 <div style={{ fontSize: '9px', color: '#737373', letterSpacing: '0.08em', marginBottom: '4px' }}>
-                  TOTAL_CARDS
+                  FOOD_ACQUIRED
                 </div>
-                <div style={{ fontSize: '20px', fontWeight: 700, color: '#ffffff' }}>
-                  {memos.length}
+                <div style={{ fontSize: '20px', fontWeight: 700, color: '#10b981' }}>
+                  🐟 {totalCompleted}
                 </div>
                 <div style={{ fontSize: '8px', color: '#525252', marginTop: '4px' }}>
-                  TAGS: {allTags.length} CATEGORIES
+                  TOTAL_CANS_EARNED
                 </div>
               </div>
             </div>
 
-            {/* 7日間のアクティビティログ (GitHub風ヒートマップ) */}
+            {/* 7日間のアクティビティログ */}
             <div style={{ backgroundColor: '#121212', border: '1px solid #262626', padding: '14px', borderRadius: '4px' }}>
               <div style={{ fontSize: '10px', fontWeight: 700, color: '#e5e5e5', letterSpacing: '0.08em', marginBottom: '12px' }}>
-                WEEKLY_ACTIVITY (PAST 7 DAYS)
+                WEEKLY_FEEDING_LOG (PAST 7 DAYS)
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
                 {getPast7Days().map((dateStr) => {
@@ -1044,33 +1118,6 @@ export default function Home() {
                         {count}
                       </div>
                       <div style={{ fontSize: '8px', color: '#525252', marginTop: '4px' }}>{dayLabel}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* ステージ別未完了分布 */}
-            <div style={{ backgroundColor: '#121212', border: '1px solid #262626', padding: '14px', borderRadius: '4px' }}>
-              <div style={{ fontSize: '10px', fontWeight: 700, color: '#e5e5e5', letterSpacing: '0.08em', marginBottom: '12px' }}>
-                CURRENT_TASK_STAGE_BREAKDOWN
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {[1, 2, 3, 4, 5].map((stg) => {
-                  const count = todayTasks.filter((t) => t.stage === stg).length;
-                  return (
-                    <div key={stg} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '10px' }}>
-                      <span style={{ color: '#737373', width: '60px' }}>STAGE 0{stg}</span>
-                      <div style={{ flex: 1, height: '4px', backgroundColor: '#1a1a1a' }}>
-                        <div
-                          style={{
-                            height: '100%',
-                            width: todayTasks.length > 0 ? `${(count / todayTasks.length) * 100}%` : '0%',
-                            backgroundColor: '#00f2fe',
-                          }}
-                        />
-                      </div>
-                      <span style={{ color: '#ffffff', width: '24px', textAlign: 'right' }}>{count}</span>
                     </div>
                   );
                 })}
@@ -1145,7 +1192,7 @@ export default function Home() {
                     type="text"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder={type === 'question' ? 'e.g. 大胸筋上部を狙う種目は？' : 'e.g. 今日のメモ'}
+                    placeholder={type === 'question' ? 'e.g. AWS S3の耐久性は何ナイン？' : 'e.g. 今日のメモ'}
                     required
                     style={{
                       width: '100%',
@@ -1169,7 +1216,7 @@ export default function Home() {
                     <textarea
                       value={answer}
                       onChange={(e) => setAnswer(e.target.value)}
-                      placeholder="e.g. インクライン・ベンチプレス"
+                      placeholder="e.g. 11ナイン (99.999999999%)"
                       rows={3}
                       style={{
                         width: '100%',
@@ -1194,7 +1241,7 @@ export default function Home() {
                     type="text"
                     value={tag}
                     onChange={(e) => setTag(e.target.value)}
-                    placeholder="e.g. CHEST, ANATOMY, ENGLISH (任意)"
+                    placeholder="e.g. AWS, WORK, FITNESS (任意)"
                     style={{
                       width: '100%',
                       padding: '10px 12px',
