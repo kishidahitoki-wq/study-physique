@@ -702,7 +702,17 @@ export default function Home() {
                         STAGE {task.stage} / 5
                       </span>
                       {task.memo.tag && (
-                        <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            color: '#059669',
+                            backgroundColor: '#ecfdf5',
+                            border: '1px solid #a7f3d0',
+                            padding: '2px 8px',
+                            borderRadius: '8px',
+                          }}
+                        >
                           #{task.memo.tag}
                         </span>
                       )}
@@ -819,7 +829,21 @@ export default function Home() {
                   >
                     {memo.type === 'question' ? '問題' : 'メモ'}
                   </span>
-                  {memo.tag && <span style={{ fontSize: '10px', color: '#94a3b8' }}>#{memo.tag}</span>}
+                  {memo.tag && (
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        color: '#059669',
+                        backgroundColor: '#ecfdf5',
+                        border: '1px solid #a7f3d0',
+                        padding: '2px 8px',
+                        borderRadius: '8px',
+                      }}
+                    >
+                      #{memo.tag}
+                    </span>
+                  )}
                 </div>
 
                 <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>{memo.title}</div>
@@ -1025,6 +1049,7 @@ export default function Home() {
                   </div>
                 )}
 
+                {/* タグ入力 ＆ ワンタップ補完 */}
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 600, marginBottom: '6px' }}>
                     タグ（任意）
@@ -1033,7 +1058,7 @@ export default function Home() {
                     type="text"
                     value={tag}
                     onChange={(e) => setTag(e.target.value)}
-                    placeholder="例: AWS"
+                    placeholder="例: AWS, JAVA, 英語"
                     style={{
                       width: '100%',
                       padding: '12px',
@@ -1046,6 +1071,32 @@ export default function Home() {
                       boxSizing: 'border-box',
                     }}
                   />
+                  {/* 💡 過去に使ったタグをタップで簡単選択 */}
+                  {allTags.length > 0 && (
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px', alignItems: 'center' }}>
+                      <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>候補:</span>
+                      {allTags.map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setTag(t)}
+                          style={{
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            border: '1px solid #e2e8f0',
+                            backgroundColor: tag.toUpperCase() === t ? '#10b981' : '#ffffff',
+                            color: tag.toUpperCase() === t ? '#ffffff' : '#64748b',
+                            fontSize: '10px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          #{t}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <button
@@ -1083,7 +1134,23 @@ export default function Home() {
                     border: '1px solid #f1f5f9',
                   }}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>{memo.title}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>{memo.title}</span>
+                    {memo.tag && (
+                      <span
+                        style={{
+                          fontSize: '9px',
+                          fontWeight: 700,
+                          color: '#059669',
+                          backgroundColor: '#ecfdf5',
+                          padding: '2px 6px',
+                          borderRadius: '6px',
+                        }}
+                      >
+                        #{memo.tag}
+                      </span>
+                    )}
+                  </div>
                   <button
                     onClick={() => handleDeleteMemo(memo.id)}
                     style={{
