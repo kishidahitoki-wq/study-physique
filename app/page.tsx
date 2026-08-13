@@ -66,7 +66,7 @@ export default function Home() {
   const [title, setTitle] = useState('');
   const [answer, setAnswer] = useState('');
   const [tag, setTag] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   // 🐱 猫の育成ステート
   const [foodStock, setFoodStock] = useState<number>(0);
@@ -80,7 +80,7 @@ export default function Home() {
 
   // Push通知ステート
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
-  const [status, setStatus] = useState<string>('準備中');
+  const [, setStatus] = useState<string>('準備中');
 
   useEffect(() => {
     fetchData();
@@ -409,7 +409,13 @@ export default function Home() {
 
   const handleQuizForgot = async () => {
     const currentMemo = quizQueue[quizIndex];
-    await handleResetScheduleForMemo(currentMemo.id);
+    if (currentMemo) {
+      await handleResetScheduleForMemo(currentMemo.id);
+    }
+    setShowCurrentAnswer(false);
+    setDragOffset({ x: 0, y: 0 });
+    setFlyOutDirection(null);
+
     if (quizIndex < quizQueue.length - 1) {
       setQuizIndex((prev) => prev + 1);
     } else {
@@ -435,6 +441,13 @@ export default function Home() {
     }
 
     setDragOffset({ x: diffX, y: diffY });
+  };
+
+  const handlePointerCancel = () => {
+    if (!isDragging) return;
+    setIsDragging(false);
+    setDragOffset({ x: 0, y: 0 });
+    setFlyOutDirection(null);
   };
 
   const handlePointerUp = (
@@ -523,7 +536,7 @@ export default function Home() {
     return days;
   };
 
-  // スワイプ時のCardスタイルを動的生成
+  // スワイプ時のCardスタイルを動적生成
   const getCardTransformStyle = () => {
     if (flyOutDirection === 'right') {
       return {
@@ -867,6 +880,7 @@ export default function Home() {
                     <div
                       onPointerDown={handlePointerDown}
                       onPointerMove={handlePointerMove}
+                      onPointerCancel={handlePointerCancel}
                       onPointerUp={(e) => handlePointerUp(e, 'review', task)}
                       style={{
                         backgroundColor: '#ffffff',
@@ -967,7 +981,7 @@ export default function Home() {
                           textAlign: 'center',
                           border: '1px dashed #cbd5e1',
                           marginBottom: '16px',
-                          pointerEvents: 'none', // 指の操作を親要素で一括キャッチ
+                          pointerEvents: 'none',
                         }}
                       >
                         <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', lineHeight: '1.5' }}>
@@ -1052,7 +1066,7 @@ export default function Home() {
         {/* ── TAB 2: 全メモ一覧画面（一覧 ➔ 一問一答演習） ── */}
         {activeTab === 'practice' && (
           <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* 🎮 一問集中の演習モード画面 */}
+            {/* 🎮 一問集中的な演習モード画面 */}
             {isQuizActive ? (
               <div>
                 {quizIndex < quizQueue.length ? (
@@ -1064,6 +1078,7 @@ export default function Home() {
                       <div
                         onPointerDown={handlePointerDown}
                         onPointerMove={handlePointerMove}
+                        onPointerCancel={handlePointerCancel}
                         onPointerUp={(e) => handlePointerUp(e, 'quiz', currentMemo)}
                         style={{
                           backgroundColor: '#ffffff',
@@ -1168,10 +1183,10 @@ export default function Home() {
                           }}
                         >
                           <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', lineHeight: '1.5' }}>
-                            {currentMemo.title}
+                            {currentMemo?.title}
                           </div>
 
-                          {currentMemo.type === 'question' && currentMemo.answer && (
+                          {currentMemo?.type === 'question' && currentMemo?.answer && (
                             <div style={{ marginTop: '16px', width: '100%' }}>
                               {showCurrentAnswer ? (
                                 <div
