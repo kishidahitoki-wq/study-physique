@@ -31,6 +31,7 @@ type Memo = {
   type: 'question' | 'simple';
   title: string;
   answer?: string;
+  tag?: string;
   created_at: string;
 };
 
@@ -50,10 +51,11 @@ const RANKS = [
 ];
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'review' | 'memos' | 'practice'>('review');
+  const [activeTab, setActiveTab] = useState<'review' | 'memos' | 'practice' | 'analytics'>('review');
 
   const [memos, setMemos] = useState<Memo[]>([]);
   const [todayTasks, setTodayTasks] = useState<ReviewTask[]>([]);
+  const [selectedTag, setSelectedTag] = useState<string>('ALL');
 
   // アコーディオン開閉状態
   const [showAnswerReviewMap, setShowAnswerReviewMap] = useState<{ [key: string]: boolean }>({});
@@ -63,12 +65,16 @@ export default function Home() {
   const [type, setType] = useState<'question' | 'simple'>('question');
   const [title, setTitle] = useState('');
   const [answer, setAnswer] = useState('');
+  const [tag, setTag] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // フィジーク＆ゲーム要素（ローカルストレージで保存）
+  // フィジーク＆ゲーム要素 & アナリティクス用データ（ローカルストレージ）
   const [xp, setXp] = useState<number>(0);
   const [streak, setStreak] = useState<number>(0);
   const [lastReviewDate, setLastReviewDate] = useState<string>('');
+  const [totalCompleted, setTotalCompleted] = useState<number>(0);
+  const [totalReset, setTotalReset] = useState<number>(0);
+  const [activityLog, setActivityLog] = useState<{ [date: string]: number }>({});
 
   // Push通知ステート
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
@@ -81,19 +87,43 @@ export default function Home() {
     const savedXp = localStorage.getItem('physique_xp');
     const savedStreak = localStorage.getItem('physique_streak');
     const savedLastDate = localStorage.getItem('physique_last_date');
+    const savedCompleted = localStorage.getItem('physique_total_completed');
+    const savedReset = localStorage.getItem('physique_total_reset');
+    const savedLog = localStorage.getItem('physique_activity_log');
 
     if (savedXp) setXp(parseInt(savedXp, 10));
     if (savedStreak) setStreak(parseInt(savedStreak, 10));
     if (savedLastDate) setLastReviewDate(savedLastDate);
+    if (savedCompleted) setTotalCompleted(parseInt(savedCompleted, 10));
+    if (savedReset) setTotalReset(parseInt(savedReset, 10));
+    if (savedLog) setActivityLog(JSON.parse(savedLog));
   }, []);
 
-  // XP・ストリークの更新と保存
-  const addXpAndCheckStreak = (amount: number) => {
+  // XP・ストリーク・アクティビティログの更新と保存
+  const addXpAndCheckStreak = (amount: number, isSuccess: boolean) => {
     const newXp = xp + amount;
     setXp(newXp);
     localStorage.setItem('physique_xp', newXp.toString());
 
     const todayStr = new Date().toISOString().split('T')[0];
+
+    // 成績ログ記録
+    if (isSuccess) {
+      const newComp = totalCompleted + 1;
+      setTotalCompleted(newComp);
+      localStorage.setItem('physique_total_completed', newComp.toString());
+    } else {
+      const newRes = totalReset + 1;
+      setTotalReset(newRes);
+      localStorage.setItem('physique_total_reset', newRes.toString());
+    }
+
+    // デイリーアクティビティログ更新
+    const newLog = { ...activityLog, [todayStr]: (activityLog[todayStr] || 0) + 1 };
+    setActivityLog(newLog);
+    localStorage.setItem('physique_activity_log', JSON.stringify(newLog));
+
+    // ストリーク更新
     if (lastReviewDate !== todayStr) {
       const newStreak = streak + 1;
       setStreak(newStreak);
@@ -193,9 +223,11 @@ export default function Home() {
     e.preventDefault();
     if (!title.trim()) return;
 
+    const formattedTag = tag.trim() ? tag.trim().toUpperCase() : null;
+
     const { data, error } = await supabase
       .from('memos')
-      .insert([{ type, title, answer: type === 'question' ? answer : null }])
+      .insert([{ type, title, answer: type === 'question' ? answer : null, tag: formattedTag }])
       .select();
 
     if (error) {
@@ -244,6 +276,7 @@ export default function Home() {
       setMemos([newMemo, ...memos]);
       setTitle('');
       setAnswer('');
+      setTag('');
       fetchTodayTasks();
       alert('カードを作成し、忘却曲線の通知予約を完了しました！');
     }
@@ -260,7 +293,7 @@ export default function Home() {
       alert('更新に失敗しました: ' + error.message);
     } else {
       setTodayTasks(todayTasks.filter((task) => task.schedule_id !== scheduleId));
-      addXpAndCheckStreak(50);
+      addXpAndCheckStreak(50, true);
     }
   };
 
@@ -278,7 +311,8 @@ export default function Home() {
     if (error) {
       alert('更新に失敗しました: ' + error.message);
     } else {
-      alert('忘却ステージを Stage 1 にリセットしました！もう一度確認しましょう 💪');
+      alert('忘却ステージを Stage 1 にリセットしました！');
+      addXpAndCheckStreak(0, false);
       fetchTodayTasks();
     }
   };
@@ -330,34 +364,32 @@ export default function Home() {
     }
   };
 
-  const handleSchedulePush = async (memo: Memo) => {
-    if (!subscription) {
-      alert('先に画面上部の「NOTIFICATION ENABLE」を押してください');
-      return;
-    }
+  // 全タグのリスト（重用排除）
+  const allTags = Array.from(
+    new Set(
+      memos
+        .map((m) => m.tag)
+        .filter((t): t is string => Boolean(t))
+    )
+  );
 
-    const pushTitle = memo.type === 'question' ? `【復習】${memo.title}` : `【メモ】${memo.title}`;
-    const pushBody = memo.type === 'question' ? `答え：${memo.answer || 'なし'}` : memo.title;
-
-    const res = await fetch('/api/schedule', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        subscription,
-        title: pushTitle,
-        body: pushBody,
-        delaySeconds: 10,
-      }),
-    });
-
-    if (res.ok) {
-      alert(`「${memo.title}」を10秒後に予約しました！`);
-    } else {
-      alert('予約に失敗しました');
-    }
-  };
+  // フィルタリング後のリスト
+  const filteredMemos = selectedTag === 'ALL' ? memos : memos.filter((m) => m.tag === selectedTag);
+  const filteredTodayTasks =
+    selectedTag === 'ALL' ? todayTasks : todayTasks.filter((t) => t.memo.tag === selectedTag);
 
   const currentRank = getCurrentRank();
+
+  // 過去7日間の日付配列生成 (アナリティクス用)
+  const getPast7Days = () => {
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      days.push(d.toISOString().split('T')[0]);
+    }
+    return days;
+  };
 
   return (
     <div
@@ -403,7 +435,7 @@ export default function Home() {
               color: '#ffffff',
             }}
           >
-            PHYSIQUE_CORE // V1.0
+            PHYSIQUE_CORE // V1.1
           </span>
         </div>
 
@@ -534,43 +566,43 @@ export default function Home() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: '1fr 1fr 1fr',
+            gridTemplateColumns: '1fr 1fr 1fr 1fr',
             gap: '4px',
             backgroundColor: '#121212',
             padding: '4px',
             border: '1px solid #262626',
             borderRadius: '4px',
-            marginBottom: '20px',
+            marginBottom: '16px',
           }}
         >
           <button
             onClick={() => setActiveTab('review')}
             style={{
-              padding: '10px 4px',
+              padding: '10px 2px',
               borderRadius: '2px',
               border: 'none',
               backgroundColor: activeTab === 'review' ? '#262626' : 'transparent',
               color: activeTab === 'review' ? '#00f2fe' : '#737373',
               fontWeight: 700,
-              fontSize: '11px',
+              fontSize: '10px',
               fontFamily: 'inherit',
               cursor: 'pointer',
               letterSpacing: '0.05em',
             }}
           >
-            REVIEW ({todayTasks.length})
+            REVIEW({todayTasks.length})
           </button>
 
           <button
             onClick={() => setActiveTab('practice')}
             style={{
-              padding: '10px 4px',
+              padding: '10px 2px',
               borderRadius: '2px',
               border: 'none',
               backgroundColor: activeTab === 'practice' ? '#262626' : 'transparent',
               color: activeTab === 'practice' ? '#00f2fe' : '#737373',
               fontWeight: 700,
-              fontSize: '11px',
+              fontSize: '10px',
               fontFamily: 'inherit',
               cursor: 'pointer',
               letterSpacing: '0.05em',
@@ -580,15 +612,33 @@ export default function Home() {
           </button>
 
           <button
+            onClick={() => setActiveTab('analytics')}
+            style={{
+              padding: '10px 2px',
+              borderRadius: '2px',
+              border: 'none',
+              backgroundColor: activeTab === 'analytics' ? '#262626' : 'transparent',
+              color: activeTab === 'analytics' ? '#00f2fe' : '#737373',
+              fontWeight: 700,
+              fontSize: '10px',
+              fontFamily: 'inherit',
+              cursor: 'pointer',
+              letterSpacing: '0.05em',
+            }}
+          >
+            STATS
+          </button>
+
+          <button
             onClick={() => setActiveTab('memos')}
             style={{
-              padding: '10px 4px',
+              padding: '10px 2px',
               borderRadius: '2px',
               border: 'none',
               backgroundColor: activeTab === 'memos' ? '#262626' : 'transparent',
               color: activeTab === 'memos' ? '#00f2fe' : '#737373',
               fontWeight: 700,
-              fontSize: '11px',
+              fontSize: '10px',
               fontFamily: 'inherit',
               cursor: 'pointer',
               letterSpacing: '0.05em',
@@ -597,6 +647,60 @@ export default function Home() {
             EDITOR
           </button>
         </div>
+
+        {/* ── 🏷️ TAG FILTER BAR (REVIEW / PRACTICE TAB ONLY) ── */}
+        {(activeTab === 'review' || activeTab === 'practice') && allTags.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              gap: '6px',
+              overflowX: 'auto',
+              paddingBottom: '12px',
+              marginBottom: '12px',
+            }}
+          >
+            <button
+              onClick={() => setSelectedTag('ALL')}
+              style={{
+                padding: '4px 10px',
+                borderRadius: '2px',
+                border: selectedTag === 'ALL' ? '1px solid #00f2fe' : '1px solid #262626',
+                backgroundColor: selectedTag === 'ALL' ? '#171717' : '#0a0a0a',
+                color: selectedTag === 'ALL' ? '#00f2fe' : '#737373',
+                fontSize: '9px',
+                fontWeight: 700,
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              # ALL ({memos.length})
+            </button>
+            {allTags.map((t) => {
+              const count = memos.filter((m) => m.tag === t).length;
+              return (
+                <button
+                  key={t}
+                  onClick={() => setSelectedTag(t)}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '2px',
+                    border: selectedTag === t ? '1px solid #00f2fe' : '1px solid #262626',
+                    backgroundColor: selectedTag === t ? '#171717' : '#0a0a0a',
+                    color: selectedTag === t ? '#00f2fe' : '#737373',
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    fontFamily: 'inherit',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  #{t} ({count})
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* ========================================================= */}
         {/* TAB 1: 🔥 今日の復習画面 */}
@@ -610,11 +714,11 @@ export default function Home() {
                 </h2>
               </div>
               <span style={{ fontSize: '10px', color: '#737373', border: '1px solid #262626', padding: '2px 8px', borderRadius: '2px' }}>
-                {todayTasks.length} PENDING
+                {filteredTodayTasks.length} PENDING
               </span>
             </div>
 
-            {todayTasks.length === 0 ? (
+            {filteredTodayTasks.length === 0 ? (
               <div
                 style={{
                   textAlign: 'center',
@@ -628,11 +732,11 @@ export default function Home() {
                 <div style={{ fontSize: '11px', color: '#10b981', fontWeight: 700, marginBottom: '6px', letterSpacing: '0.1em' }}>
                   [ STATUS: ALL_CLEAR ]
                 </div>
-                <div style={{ fontSize: '11px' }}>本日の復習タスクはすべて完了しました。</div>
+                <div style={{ fontSize: '11px' }}>該当する復習タスクはありません。</div>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {todayTasks.map((task) => (
+                {filteredTodayTasks.map((task) => (
                   <div
                     key={task.schedule_id}
                     style={{
@@ -643,9 +747,16 @@ export default function Home() {
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                      <span style={{ fontSize: '9px', fontWeight: 700, color: '#00f2fe', border: '1px solid #1a3a4a', padding: '2px 6px', borderRadius: '2px', letterSpacing: '0.05em' }}>
-                        STAGE 0{task.stage} / 05
-                      </span>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '9px', fontWeight: 700, color: '#00f2fe', border: '1px solid #1a3a4a', padding: '2px 6px', borderRadius: '2px', letterSpacing: '0.05em' }}>
+                          STAGE 0{task.stage} / 05
+                        </span>
+                        {task.memo.tag && (
+                          <span style={{ fontSize: '8px', color: '#a3a3a3', backgroundColor: '#171717', border: '1px solid #262626', padding: '2px 6px', borderRadius: '2px' }}>
+                            #{task.memo.tag}
+                          </span>
+                        )}
+                      </div>
                       <span style={{ fontSize: '9px', color: '#525252', letterSpacing: '0.05em' }}>
                         {task.memo.type === 'question' ? 'TYPE: QUESTION' : 'TYPE: SIMPLE_MEMO'}
                       </span>
@@ -749,7 +860,7 @@ export default function Home() {
                 </h2>
               </div>
               <span style={{ fontSize: '10px', color: '#737373', border: '1px solid #262626', padding: '2px 8px', borderRadius: '2px' }}>
-                {memos.length} ITEMS
+                {filteredMemos.length} ITEMS
               </span>
             </div>
 
@@ -757,13 +868,13 @@ export default function Home() {
               <div style={{ textAlign: 'center', padding: '32px 0', color: '#525252', fontSize: '11px' }}>
                 [ LOADING_DATA... ]
               </div>
-            ) : memos.length === 0 ? (
+            ) : filteredMemos.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '32px 0', border: '1px dashed #262626', borderRadius: '4px', color: '#525252', fontSize: '11px' }}>
                 データが存在しません。[ EDITOR ] タブから作成してください。
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {memos.map((memo) => (
+                {filteredMemos.map((memo) => (
                   <div
                     key={memo.id}
                     style={{
@@ -774,19 +885,26 @@ export default function Home() {
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <span
-                        style={{
-                          fontSize: '8px',
-                          fontWeight: 700,
-                          padding: '2px 6px',
-                          borderRadius: '2px',
-                          border: '1px solid #262626',
-                          color: memo.type === 'question' ? '#00f2fe' : '#737373',
-                          letterSpacing: '0.05em',
-                        }}
-                      >
-                        {memo.type === 'question' ? 'QUESTION' : 'SIMPLE_MEMO'}
-                      </span>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        <span
+                          style={{
+                            fontSize: '8px',
+                            fontWeight: 700,
+                            padding: '2px 6px',
+                            borderRadius: '2px',
+                            border: '1px solid #262626',
+                            color: memo.type === 'question' ? '#00f2fe' : '#737373',
+                            letterSpacing: '0.05em',
+                          }}
+                        >
+                          {memo.type === 'question' ? 'QUESTION' : 'SIMPLE_MEMO'}
+                        </span>
+                        {memo.tag && (
+                          <span style={{ fontSize: '8px', color: '#a3a3a3', backgroundColor: '#171717', border: '1px solid #262626', padding: '2px 6px', borderRadius: '2px' }}>
+                            #{memo.tag}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <h3 style={{ margin: '0 0 10px 0', fontSize: '12px', fontWeight: 400, color: '#d4d4d4', lineHeight: '1.5' }}>
@@ -855,7 +973,114 @@ export default function Home() {
         )}
 
         {/* ========================================================= */}
-        {/* TAB 3: ✏️ メモ作成 ＆ 編集・管理画面 */}
+        {/* TAB 3: 📊 パフォーマンステキスト・アナリティクス画面 (NEW) */}
+        {/* ========================================================= */}
+        {activeTab === 'analytics' && (
+          <section style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ fontSize: '12px', fontWeight: 700, margin: 0, color: '#00f2fe', letterSpacing: '0.1em' }}>
+                // PERFORMANCE_ANALYTICS
+              </h2>
+              <span style={{ fontSize: '9px', color: '#525252' }}>REALTIME_METRICS</span>
+            </div>
+
+            {/* KPI Summary Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <div style={{ backgroundColor: '#121212', border: '1px solid #262626', padding: '12px', borderRadius: '4px' }}>
+                <div style={{ fontSize: '9px', color: '#737373', letterSpacing: '0.08em', marginBottom: '4px' }}>
+                  RETENTION_RATE
+                </div>
+                <div style={{ fontSize: '20px', fontWeight: 700, color: '#00f2fe' }}>
+                  {totalCompleted + totalReset === 0
+                    ? '0.0%'
+                    : `${((totalCompleted / (totalCompleted + totalReset)) * 100).toFixed(1)}%`}
+                </div>
+                <div style={{ fontSize: '8px', color: '#525252', marginTop: '4px' }}>
+                  OK: {totalCompleted} / RESET: {totalReset}
+                </div>
+              </div>
+
+              <div style={{ backgroundColor: '#121212', border: '1px solid #262626', padding: '12px', borderRadius: '4px' }}>
+                <div style={{ fontSize: '9px', color: '#737373', letterSpacing: '0.08em', marginBottom: '4px' }}>
+                  TOTAL_CARDS
+                </div>
+                <div style={{ fontSize: '20px', fontWeight: 700, color: '#ffffff' }}>
+                  {memos.length}
+                </div>
+                <div style={{ fontSize: '8px', color: '#525252', marginTop: '4px' }}>
+                  TAGS: {allTags.length} CATEGORIES
+                </div>
+              </div>
+            </div>
+
+            {/* 7日間のアクティビティログ (GitHub風ヒートマップ) */}
+            <div style={{ backgroundColor: '#121212', border: '1px solid #262626', padding: '14px', borderRadius: '4px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 700, color: '#e5e5e5', letterSpacing: '0.08em', marginBottom: '12px' }}>
+                WEEKLY_ACTIVITY (PAST 7 DAYS)
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
+                {getPast7Days().map((dateStr) => {
+                  const count = activityLog[dateStr] || 0;
+                  const dayLabel = dateStr.slice(5); // MM-DD
+                  const isToday = new Date().toISOString().split('T')[0] === dateStr;
+
+                  return (
+                    <div key={dateStr} style={{ textAlign: 'center' }}>
+                      <div
+                        style={{
+                          height: '32px',
+                          backgroundColor: count > 0 ? '#00f2fe' : '#1a1a1a',
+                          opacity: count > 0 ? Math.min(1, 0.3 + count * 0.2) : 1,
+                          border: isToday ? '1px solid #ffffff' : '1px solid #262626',
+                          borderRadius: '2px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          color: count > 0 ? '#0a0a0a' : '#525252',
+                        }}
+                      >
+                        {count}
+                      </div>
+                      <div style={{ fontSize: '8px', color: '#525252', marginTop: '4px' }}>{dayLabel}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* ステージ別未完了分布 */}
+            <div style={{ backgroundColor: '#121212', border: '1px solid #262626', padding: '14px', borderRadius: '4px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 700, color: '#e5e5e5', letterSpacing: '0.08em', marginBottom: '12px' }}>
+                CURRENT_TASK_STAGE_BREAKDOWN
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {[1, 2, 3, 4, 5].map((stg) => {
+                  const count = todayTasks.filter((t) => t.stage === stg).length;
+                  return (
+                    <div key={stg} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '10px' }}>
+                      <span style={{ color: '#737373', width: '60px' }}>STAGE 0{stg}</span>
+                      <div style={{ flex: 1, height: '4px', backgroundColor: '#1a1a1a' }}>
+                        <div
+                          style={{
+                            height: '100%',
+                            width: todayTasks.length > 0 ? `${(count / todayTasks.length) * 100}%` : '0%',
+                            backgroundColor: '#00f2fe',
+                          }}
+                        />
+                      </div>
+                      <span style={{ color: '#ffffff', width: '24px', textAlign: 'right' }}>{count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 4: ✏️ メモ作成 ＆ 編集・管理画面 */}
         {/* ========================================================= */}
         {activeTab === 'memos' && (
           <section>
@@ -961,6 +1186,29 @@ export default function Home() {
                   </div>
                 )}
 
+                <div>
+                  <label style={{ display: 'block', fontSize: '9px', color: '#666666', fontWeight: 700, marginBottom: '4px', letterSpacing: '0.08em' }}>
+                    TAG (CATEGORY)
+                  </label>
+                  <input
+                    type="text"
+                    value={tag}
+                    onChange={(e) => setTag(e.target.value)}
+                    placeholder="e.g. CHEST, ANATOMY, ENGLISH (任意)"
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '2px',
+                      backgroundColor: '#0a0a0a',
+                      border: '1px solid #262626',
+                      color: '#fff',
+                      fontSize: '11px',
+                      fontFamily: 'inherit',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+
                 <button
                   type="submit"
                   style={{
@@ -1004,27 +1252,17 @@ export default function Home() {
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                        <span style={{ fontSize: '9px', color: '#525252' }}>
-                          {new Date(memo.created_at).toLocaleDateString('ja-JP')}
-                        </span>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <span style={{ fontSize: '9px', color: '#525252' }}>
+                            {new Date(memo.created_at).toLocaleDateString('ja-JP')}
+                          </span>
+                          {memo.tag && (
+                            <span style={{ fontSize: '8px', color: '#a3a3a3', backgroundColor: '#171717', border: '1px solid #262626', padding: '1px 5px', borderRadius: '2px' }}>
+                              #{memo.tag}
+                            </span>
+                          )}
+                        </div>
                         <div style={{ display: 'flex', gap: '6px' }}>
-                          <button
-                            onClick={() => handleSchedulePush(memo)}
-                            style={{
-                              padding: '2px 6px',
-                              fontSize: '9px',
-                              fontWeight: 700,
-                              backgroundColor: '#171717',
-                              color: '#00f2fe',
-                              border: '1px solid #262626',
-                              borderRadius: '2px',
-                              fontFamily: 'inherit',
-                              cursor: 'pointer',
-                              letterSpacing: '0.05em',
-                            }}
-                          >
-                            TEST_10S
-                          </button>
                           <button
                             onClick={() => handleDeleteMemo(memo.id)}
                             style={{
