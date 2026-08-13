@@ -187,7 +187,7 @@ export default function Home() {
         borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
         padding: '12px 24px',
         display: 'flex',
-        justifyInContent: 'space-between',
+        justifyContent: 'space-between',
         alignItems: 'center'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
