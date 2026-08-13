@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { FORGETTING_STAGES, calculateRandomScheduleTime } from '@/lib/scheduler';
 
@@ -50,8 +50,13 @@ export default function Home() {
   // 回答表示トグル用ステート
   const [showCurrentAnswer, setShowCurrentAnswer] = useState<boolean>(false);
 
-  // iPhone横スワイプ検知用
-  const [touchStartX, setTouchStartX] = useState<number>(0);
+  // 👆 ドラッグ / スワイプ連動用ステート
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [flyOutDirection, setFlyOutDirection] = useState<'left' | 'right' | null>(null);
+  
+  const touchStartPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const isMoved = useRef<boolean>(false);
 
   // アコーディオン開閉状態 (一覧表示用)
   const [showAnswerPracticeMap, setShowAnswerPracticeMap] = useState<{ [key: string]: boolean }>({});
@@ -282,6 +287,9 @@ export default function Home() {
   // 復習の完了処理（1問完了時）
   const handleCompleteReview = async (scheduleId: string) => {
     setShowCurrentAnswer(false);
+    setDragOffset({ x: 0, y: 0 });
+    setFlyOutDirection(null);
+
     const { error } = await supabase
       .from('schedules')
       .update({ completed: true })
@@ -300,6 +308,9 @@ export default function Home() {
   // 復習のリセット処理（忘れた場合）
   const handleResetReview = async (task: ReviewTask) => {
     setShowCurrentAnswer(false);
+    setDragOffset({ x: 0, y: 0 });
+    setFlyOutDirection(null);
+
     const { error } = await supabase
       .from('schedules')
       .update({
@@ -317,6 +328,9 @@ export default function Home() {
 
   const handleResetScheduleForMemo = async (memoId: string) => {
     setShowCurrentAnswer(false);
+    setDragOffset({ x: 0, y: 0 });
+    setFlyOutDirection(null);
+
     const { error } = await supabase
       .from('schedules')
       .update({
@@ -383,6 +397,9 @@ export default function Home() {
 
   const handleQuizRemember = () => {
     setShowCurrentAnswer(false);
+    setDragOffset({ x: 0, y: 0 });
+    setFlyOutDirection(null);
+
     if (quizIndex < quizQueue.length - 1) {
       setQuizIndex((prev) => prev + 1);
     } else {
@@ -400,32 +417,66 @@ export default function Home() {
     }
   };
 
-  // 📱 スマホ用スワイプ処理ハンドラー（右＝覚えた / 左＝忘れた）
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setTouchStartX(e.touches[0].clientX);
+  // 📱 指の動作にリアルタイム連動するタッチ/ドラッグイベント制御
+  const handlePointerDown = (e: React.PointerEvent) => {
+    setIsDragging(true);
+    isMoved.current = false;
+    touchStartPos.current = { x: e.clientX, y: e.clientY };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
-  const handleTouchEnd = (e: React.TouchEvent, mode: 'review' | 'quiz') => {
-    const touchEndX = e.changedTouches[0].clientX;
-    const diff = touchStartX - touchEndX;
-    const threshold = 50; // スワイプ検知閾値 (px)
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging) return;
+    const diffX = e.clientX - touchStartPos.current.x;
+    const diffY = e.clientY - touchStartPos.current.y;
 
-    if (diff > threshold) {
-      // 👈 左向きスワイプ（忘れた）
-      if (mode === 'review') {
-        const task = filteredTodayTasks[Math.min(reviewIndex, filteredTodayTasks.length - 1)];
-        if (task) handleResetReview(task);
-      } else {
-        handleQuizForgot();
-      }
-    } else if (diff < -threshold) {
-      // 👉 右向きスワイプ（覚えた）
-      if (mode === 'review') {
-        const task = filteredTodayTasks[Math.min(reviewIndex, filteredTodayTasks.length - 1)];
-        if (task) handleCompleteReview(task.schedule_id);
-      } else {
-        handleQuizRemember();
-      }
+    if (Math.abs(diffX) > 8 || Math.abs(diffY) > 8) {
+      isMoved.current = true;
+    }
+
+    setDragOffset({ x: diffX, y: diffY });
+  };
+
+  const handlePointerUp = (
+    e: React.PointerEvent,
+    mode: 'review' | 'quiz',
+    taskOrMemo?: ReviewTask | Memo
+  ) => {
+    if (!isDragging) return;
+    setIsDragging(false);
+
+    const threshold = 100; // スワイプ確定のしきい値(px)
+
+    // タップ判定（移動量が小さい場合）
+    if (!isMoved.current) {
+      setShowCurrentAnswer((prev) => !prev);
+      setDragOffset({ x: 0, y: 0 });
+      return;
+    }
+
+    if (dragOffset.x > threshold) {
+      // 👉 右スワイプ（覚えた）
+      setFlyOutDirection('right');
+      setTimeout(() => {
+        if (mode === 'review' && taskOrMemo) {
+          handleCompleteReview((taskOrMemo as ReviewTask).schedule_id);
+        } else {
+          handleQuizRemember();
+        }
+      }, 200);
+    } else if (dragOffset.x < -threshold) {
+      // 👈 左スワイプ（忘れた）
+      setFlyOutDirection('left');
+      setTimeout(() => {
+        if (mode === 'review' && taskOrMemo) {
+          handleResetReview(taskOrMemo as ReviewTask);
+        } else {
+          handleQuizForgot();
+        }
+      }, 200);
+    } else {
+      // 元の位置に戻る
+      setDragOffset({ x: 0, y: 0 });
     }
   };
 
@@ -472,6 +523,30 @@ export default function Home() {
     return days;
   };
 
+  // スワイプ時のCardスタイルを動的生成
+  const getCardTransformStyle = () => {
+    if (flyOutDirection === 'right') {
+      return {
+        transform: 'translateX(500px) rotate(25deg)',
+        opacity: 0,
+        transition: 'all 0.25s ease-in',
+      };
+    }
+    if (flyOutDirection === 'left') {
+      return {
+        transform: 'translateX(-500px) rotate(-25deg)',
+        opacity: 0,
+        transition: 'all 0.25s ease-in',
+      };
+    }
+
+    const rotate = dragOffset.x * 0.08; // ドラッグ量に応じて自然に傾く
+    return {
+      transform: `translate(${dragOffset.x}px, ${dragOffset.y * 0.3}px) rotate(${rotate}deg)`,
+      transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.27)',
+    };
+  };
+
   return (
     <div
       style={{
@@ -481,6 +556,7 @@ export default function Home() {
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
         padding: '20px 16px 80px 16px',
         boxSizing: 'border-box',
+        overflowX: 'hidden',
       }}
     >
       {/* ── HEADER ── */}
@@ -680,6 +756,7 @@ export default function Home() {
                 setIsQuizActive(false);
                 setReviewIndex(0);
                 setShowCurrentAnswer(false);
+                setDragOffset({ x: 0, y: 0 });
               }}
               style={{
                 padding: '10px 0',
@@ -759,7 +836,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── TAB 1: 復習画面（1問集中＋タップ回答＋ジェスチャー操作） ── */}
+        {/* ── TAB 1: 復習画面（1問集中＋スワイプ連動付きカード） ── */}
         {activeTab === 'review' && (
           <section>
             {filteredTodayTasks.length === 0 ? (
@@ -779,26 +856,72 @@ export default function Home() {
                 <div style={{ fontSize: '12px', color: '#64748b' }}>キャットフードを獲得しました。猫に餌をあげましょう！</div>
               </div>
             ) : (
-              <div
-                onTouchStart={handleTouchStart}
-                onTouchEnd={(e) => handleTouchEnd(e, 'review')}
-                style={{ touchAction: 'pan-y' }}
-              >
+              <div>
                 {(() => {
                   const task = filteredTodayTasks[Math.min(reviewIndex, filteredTodayTasks.length - 1)];
                   if (!task) return null;
 
+                  const cardStyle = getCardTransformStyle();
+
                   return (
                     <div
+                      onPointerDown={handlePointerDown}
+                      onPointerMove={handlePointerMove}
+                      onPointerUp={(e) => handlePointerUp(e, 'review', task)}
                       style={{
                         backgroundColor: '#ffffff',
                         borderRadius: '20px',
                         padding: '20px',
-                        boxShadow: '0 10px 20px -5px rgba(0,0,0,0.03)',
+                        boxShadow: '0 10px 20px -5px rgba(0,0,0,0.05)',
                         border: '1px solid #f1f5f9',
                         userSelect: 'none',
+                        touchAction: 'none',
+                        cursor: isDragging ? 'grabbing' : 'grab',
+                        position: 'relative',
+                        willChange: 'transform',
+                        ...cardStyle,
                       }}
                     >
+                      {/* スワイプ中の判定バッジ（オーバーレイ表示） */}
+                      {dragOffset.x > 30 && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: 16,
+                            left: 16,
+                            border: '3px solid #10b981',
+                            color: '#10b981',
+                            fontWeight: 800,
+                            fontSize: '14px',
+                            padding: '4px 12px',
+                            borderRadius: '8px',
+                            transform: 'rotate(-15deg)',
+                            zIndex: 20,
+                          }}
+                        >
+                          覚えた 👉
+                        </div>
+                      )}
+                      {dragOffset.x < -30 && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: 16,
+                            right: 16,
+                            border: '3px solid #ef4444',
+                            color: '#ef4444',
+                            fontWeight: 800,
+                            fontSize: '14px',
+                            padding: '4px 12px',
+                            borderRadius: '8px',
+                            transform: 'rotate(15deg)',
+                            zIndex: 20,
+                          }}
+                        >
+                          👈 忘れた
+                        </div>
+                      )}
+
                       {/* ステータスバー */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                         <span
@@ -830,14 +953,12 @@ export default function Home() {
                         )}
                       </div>
 
-                      {/* タップ可能カード本体 */}
+                      {/* メモ・問題カード本文 */}
                       <div
-                        onClick={() => setShowCurrentAnswer(!showCurrentAnswer)}
                         style={{
                           backgroundColor: '#f8fafc',
                           borderRadius: '16px',
                           padding: '20px',
-                          cursor: 'pointer',
                           minHeight: '160px',
                           display: 'flex',
                           flexDirection: 'column',
@@ -846,7 +967,7 @@ export default function Home() {
                           textAlign: 'center',
                           border: '1px dashed #cbd5e1',
                           marginBottom: '16px',
-                          transition: 'all 0.2s ease',
+                          pointerEvents: 'none', // 指の操作を親要素で一括キャッチ
                         }}
                       >
                         <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', lineHeight: '1.5' }}>
@@ -882,7 +1003,10 @@ export default function Home() {
                       {/* ガイド＆ボタン操作 */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                         <button
-                          onClick={() => handleResetReview(task)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleResetReview(task);
+                          }}
                           style={{
                             padding: '12px',
                             backgroundColor: '#fef2f2',
@@ -898,7 +1022,10 @@ export default function Home() {
                         </button>
 
                         <button
-                          onClick={() => handleCompleteReview(task.schedule_id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCompleteReview(task.schedule_id);
+                          }}
                           style={{
                             padding: '12px',
                             backgroundColor: '#10b981',
@@ -927,134 +1054,192 @@ export default function Home() {
           <section style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {/* 🎮 一問集中の演習モード画面 */}
             {isQuizActive ? (
-              <div
-                onTouchStart={handleTouchStart}
-                onTouchEnd={(e) => handleTouchEnd(e, 'quiz')}
-                style={{ touchAction: 'pan-y' }}
-              >
+              <div>
                 {quizIndex < quizQueue.length ? (
-                  <div
-                    style={{
-                      backgroundColor: '#ffffff',
-                      borderRadius: '20px',
-                      padding: '20px',
-                      boxShadow: '0 10px 20px -5px rgba(0,0,0,0.03)',
-                      border: '1px solid #f1f5f9',
-                      userSelect: 'none',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                      <span
+                  (() => {
+                    const currentMemo = quizQueue[quizIndex];
+                    const cardStyle = getCardTransformStyle();
+
+                    return (
+                      <div
+                        onPointerDown={handlePointerDown}
+                        onPointerMove={handlePointerMove}
+                        onPointerUp={(e) => handlePointerUp(e, 'quiz', currentMemo)}
                         style={{
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          color: '#3b82f6',
-                          backgroundColor: '#eff6ff',
-                          padding: '4px 10px',
-                          borderRadius: '12px',
+                          backgroundColor: '#ffffff',
+                          borderRadius: '20px',
+                          padding: '20px',
+                          boxShadow: '0 10px 20px -5px rgba(0,0,0,0.05)',
+                          border: '1px solid #f1f5f9',
+                          userSelect: 'none',
+                          touchAction: 'none',
+                          cursor: isDragging ? 'grabbing' : 'grab',
+                          position: 'relative',
+                          willChange: 'transform',
+                          ...cardStyle,
                         }}
                       >
-                        問題 {quizIndex + 1} / {quizQueue.length}
-                      </span>
-                      <button
-                        onClick={() => setIsQuizActive(false)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: '#94a3b8',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        ✕ 一覧に戻る
-                      </button>
-                    </div>
+                        {/* スワイプ中の判定バッジ（オーバーレイ表示） */}
+                        {dragOffset.x > 30 && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: 16,
+                              left: 16,
+                              border: '3px solid #10b981',
+                              color: '#10b981',
+                              fontWeight: 800,
+                              fontSize: '14px',
+                              padding: '4px 12px',
+                              borderRadius: '8px',
+                              transform: 'rotate(-15deg)',
+                              zIndex: 20,
+                            }}
+                          >
+                            覚えた 👉
+                          </div>
+                        )}
+                        {dragOffset.x < -30 && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: 16,
+                              right: 16,
+                              border: '3px solid #ef4444',
+                              color: '#ef4444',
+                              fontWeight: 800,
+                              fontSize: '14px',
+                              padding: '4px 12px',
+                              borderRadius: '8px',
+                              transform: 'rotate(15deg)',
+                              zIndex: 20,
+                            }}
+                          >
+                            👈 忘れた
+                          </div>
+                        )}
 
-                    {/* タップ可能カード本体 */}
-                    <div
-                      onClick={() => setShowCurrentAnswer(!showCurrentAnswer)}
-                      style={{
-                        backgroundColor: '#f8fafc',
-                        borderRadius: '16px',
-                        padding: '20px',
-                        cursor: 'pointer',
-                        minHeight: '160px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        textAlign: 'center',
-                        border: '1px dashed #cbd5e1',
-                        marginBottom: '16px',
-                        transition: 'all 0.2s ease',
-                      }}
-                    >
-                      <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', lineHeight: '1.5' }}>
-                        {quizQueue[quizIndex].title}
-                      </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              color: '#3b82f6',
+                              backgroundColor: '#eff6ff',
+                              padding: '4px 10px',
+                              borderRadius: '12px',
+                            }}
+                          >
+                            問題 {quizIndex + 1} / {quizQueue.length}
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsQuizActive(false);
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#94a3b8',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            ✕ 一覧に戻る
+                          </button>
+                        </div>
 
-                      {quizQueue[quizIndex].type === 'question' && quizQueue[quizIndex].answer && (
-                        <div style={{ marginTop: '16px', width: '100%' }}>
-                          {showCurrentAnswer ? (
-                            <div
-                              style={{
-                                backgroundColor: '#ffffff',
-                                padding: '12px 16px',
-                                borderRadius: '12px',
-                                fontSize: '13px',
-                                color: '#3b82f6',
-                                fontWeight: 700,
-                                lineHeight: 1.6,
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-                              }}
-                            >
-                              {quizQueue[quizIndex].answer}
+                        {/* カード本体 */}
+                        <div
+                          style={{
+                            backgroundColor: '#f8fafc',
+                            borderRadius: '16px',
+                            padding: '20px',
+                            minHeight: '160px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            textAlign: 'center',
+                            border: '1px dashed #cbd5e1',
+                            marginBottom: '16px',
+                            pointerEvents: 'none',
+                          }}
+                        >
+                          <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', lineHeight: '1.5' }}>
+                            {currentMemo.title}
+                          </div>
+
+                          {currentMemo.type === 'question' && currentMemo.answer && (
+                            <div style={{ marginTop: '16px', width: '100%' }}>
+                              {showCurrentAnswer ? (
+                                <div
+                                  style={{
+                                    backgroundColor: '#ffffff',
+                                    padding: '12px 16px',
+                                    borderRadius: '12px',
+                                    fontSize: '13px',
+                                    color: '#3b82f6',
+                                    fontWeight: 700,
+                                    lineHeight: 1.6,
+                                    boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                                  }}
+                                >
+                                  {currentMemo.answer}
+                                </div>
+                              ) : (
+                                <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>
+                                  👆 タップして回答を表示
+                                </span>
+                              )}
                             </div>
-                          ) : (
-                            <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>
-                              👆 タップして回答を表示
-                            </span>
                           )}
                         </div>
-                      )}
-                    </div>
 
-                    {/* 操作ボタン */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                      <button
-                        onClick={handleQuizForgot}
-                        style={{
-                          padding: '12px',
-                          backgroundColor: '#fef2f2',
-                          color: '#ef4444',
-                          border: 'none',
-                          borderRadius: '12px',
-                          fontWeight: 700,
-                          fontSize: '12px',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        👈 忘れた (左スワイプ)
-                      </button>
-                      <button
-                        onClick={handleQuizRemember}
-                        style={{
-                          padding: '12px',
-                          backgroundColor: '#10b981',
-                          color: '#ffffff',
-                          border: 'none',
-                          borderRadius: '12px',
-                          fontWeight: 700,
-                          fontSize: '12px',
-                          cursor: 'pointer',
-                          boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
-                        }}
-                      >
-                        覚えた (右スワイプ 👉)
-                      </button>
-                    </div>
-                  </div>
+                        {/* 操作ボタン */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleQuizForgot();
+                            }}
+                            style={{
+                              padding: '12px',
+                              backgroundColor: '#fef2f2',
+                              color: '#ef4444',
+                              border: 'none',
+                              borderRadius: '12px',
+                              fontWeight: 700,
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            👈 忘れた (左スワイプ)
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleQuizRemember();
+                            }}
+                            style={{
+                              padding: '12px',
+                              backgroundColor: '#10b981',
+                              color: '#ffffff',
+                              border: 'none',
+                              borderRadius: '12px',
+                              fontWeight: 700,
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)',
+                            }}
+                          >
+                            覚えた (右スワイプ 👉)
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()
                 ) : (
                   <div
                     style={{
