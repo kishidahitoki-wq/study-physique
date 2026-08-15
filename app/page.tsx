@@ -133,7 +133,6 @@ export default function Home() {
       return;
     }
 
-    // ローカルストレージのデータを削除
     localStorage.removeItem('cat_coins');
     localStorage.removeItem('cat_love');
     localStorage.removeItem('physique_streak');
@@ -146,7 +145,6 @@ export default function Home() {
     localStorage.removeItem('cat_is_sick');
     localStorage.removeItem('cat_debt');
 
-    // ステートを初期値にリセット
     setCoins(0);
     setCatLove(0);
     setStreak(0);
@@ -464,12 +462,40 @@ export default function Home() {
     setShowAnswerPracticeMap((prev) => ({ ...prev, [memoId]: !prev[memoId] }));
   };
 
+  // 🗑️ メモ削除 ＆ QStash予約通知の削除連携ロジック
   const handleDeleteMemo = async (id: string) => {
     if (!confirm('削除しますか？')) return;
+
+    // 1. 削除対象メモに紐づくスケジュール（qstash_message_id等）を取得
+    const { data: schedules } = await supabase
+      .from('schedules')
+      .select('qstash_message_id')
+      .eq('memo_id', id);
+
+    // 2. QStash側に登録されている予約通知があればキャンセルAPIを呼び出す
+    if (schedules) {
+      for (const sched of schedules) {
+        if (sched.qstash_message_id) {
+          try {
+            await fetch('/api/cancel-notification', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ messageId: sched.qstash_message_id }),
+            });
+          } catch (err) {
+            console.error('Failed to cancel QStash notification:', err);
+          }
+        }
+      }
+    }
+
+    // 3. Supabase側からメモを削除（カスケード設定により schedules も削除される想定）
     const { error } = await supabase.from('memos').delete().eq('id', id);
     if (!error) {
       setMemos(memos.filter((memo) => memo.id !== id));
       setTodayTasks(todayTasks.filter((task) => task.memo.id !== id));
+    } else {
+      alert('削除失敗: ' + error.message);
     }
   };
 
@@ -800,7 +826,6 @@ export default function Home() {
             position: 'relative',
           }}
         >
-          {/* 病気アラートバナー */}
           {isSick && (
             <div
               style={{
@@ -836,7 +861,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* 借金アラートバナー */}
           {debt > 0 && (
             <div
               style={{
@@ -1276,7 +1300,6 @@ export default function Home() {
               🐱 にゃんこショップ
             </h3>
 
-            {/* 商品1: キャットフード */}
             <div
               style={{
                 backgroundColor: '#ffffff',
@@ -1311,7 +1334,6 @@ export default function Home() {
               </button>
             </div>
 
-            {/* 商品2: 高級缶詰 */}
             <div
               style={{
                 backgroundColor: '#ffffff',
@@ -1346,7 +1368,6 @@ export default function Home() {
               </button>
             </div>
 
-            {/* 商品3: おもちゃ */}
             <div
               style={{
                 backgroundColor: '#ffffff',
@@ -2061,7 +2082,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 🔄 リセット用のセクション */}
             <div
               style={{
                 backgroundColor: '#ffffff',
