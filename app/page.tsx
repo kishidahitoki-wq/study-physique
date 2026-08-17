@@ -16,6 +16,8 @@ type Memo = {
 type ReviewTask = {
   schedule_id: string;
   stage: number;
+  scheduled_at: string;
+  qstash_message_id?: string | null;
   memo: Memo;
 };
 
@@ -291,41 +293,66 @@ export default function Home() {
     }
   };
 
-  const fetchTodayTasks = async () => {
+    const fetchTodayTasks = async () => {
     const nowISO = new Date().toISOString();
 
     const { data, error } = await supabase
-      .from('schedules')
-      .select(`
+        .from('schedules')
+        .select(`
         id,
         stage,
         scheduled_at,
         completed,
         memo_id,
+        qstash_message_id,
         memos (*)
-      `)
-      .lte('scheduled_at', nowISO)
-      .eq('completed', false)
-      .order('scheduled_at', { ascending: true });
+        `)
+        .lte('scheduled_at', nowISO)
+        .eq('completed', false)
+        .order('scheduled_at', { ascending: true });
 
-    if (!error && data) {
-      const uniqueMemoMap = new Map<string, ReviewTask>();
-
-      for (const item of data) {
-        if (item.memos && !uniqueMemoMap.has(item.memo_id)) {
-          const rawMemo = Array.isArray(item.memos) ? item.memos[0] : item.memos;
-          if (rawMemo) {
-            uniqueMemoMap.set(item.memo_id, {
-              schedule_id: item.id,
-              stage: item.stage,
-              memo: rawMemo as Memo,
-            });
-          }
-        }
-      }
-      setTodayTasks(Array.from(uniqueMemoMap.values()));
+    if (error) {
+        console.error(
+        'Failed to fetch review schedules:',
+        error
+        );
+        return;
     }
-  };
+
+    if (!data) {
+        setTodayTasks([]);
+        return;
+    }
+
+    const uniqueMemoMap =
+        new Map<string, ReviewTask>();
+
+    for (const item of data) {
+        if (
+        item.memos &&
+        !uniqueMemoMap.has(item.memo_id)
+        ) {
+        const rawMemo = Array.isArray(item.memos)
+            ? item.memos[0]
+            : item.memos;
+
+        if (rawMemo) {
+            uniqueMemoMap.set(item.memo_id, {
+            schedule_id: item.id,
+            stage: item.stage,
+            scheduled_at: item.scheduled_at,
+            qstash_message_id:
+                item.qstash_message_id,
+            memo: rawMemo as Memo,
+            });
+        }
+        }
+    }
+
+    setTodayTasks(
+        Array.from(uniqueMemoMap.values())
+    );
+    };
 
   useEffect(() => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
@@ -345,60 +372,208 @@ export default function Home() {
     }
   }, []);
 
-  const handleAddMemo = async (e: React.FormEvent) => {
+    const handleAddMemo = async (
+    e: React.FormEvent
+    ) => {
     e.preventDefault();
-    if (!title.trim()) return;
 
-    const formattedTag = tag.trim() ? tag.trim().toUpperCase() : null;
+    if (!title.trim()) {
+        return;
+    }
 
+    const formattedTag = tag.trim()
+        ? tag.trim().toUpperCase()
+        : null;
+
+    // 1. メモ作成
     const { data, error } = await supabase
-      .from('memos')
-      .insert([{ type, title, answer: type === 'question' ? answer : null, tag: formattedTag }])
-      .select();
+        .from('memos')
+        .insert([
+        {
+            type,
+            title,
+            answer:
+            type === 'question'
+                ? answer
+                : null,
+            tag: formattedTag,
+        },
+        ])
+        .select();
 
     if (error) {
-      alert('保存失敗: ' + error.message);
-      return;
+        alert(
+        '保存失敗: ' +
+        error.message
+        );
+        return;
     }
 
-    if (data && data[0]) {
-      const newMemo = data[0] as Memo;
+    if (!data || !data[0]) {
+        return;
+    }
 
-      const scheduleInserts = FORGETTING_STAGES.map((days, index) => ({
-        memo_id: newMemo.id,
-        scheduled_at: calculateRandomScheduleTime(days),
-        stage: index + 1,
-        completed: false,
-      }));
+    const newMemo = data[0] as Memo;
 
-      await supabase.from('schedules').insert(scheduleInserts);
+    // 2. 忘却曲線のスケジュールを作成
+    const scheduleInserts =
+        FORGETTING_STAGES.map(
+        (days, index) => ({
+            memo_id: newMemo.id,
 
-      if (subscription) {
-        const pushTitle = newMemo.type === 'question' ? `🐱 猫がお腹を空かせています` : `📝 復習メモ`;
+            scheduled_at:
+            calculateRandomScheduleTime(days),
+
+            stage: index + 1,
+
+            completed: false,
+
+            qstash_message_id: null,
+        })
+        );
+
+    const {
+        data: schedules,
+        error: scheduleError,
+    } = await supabase
+        .from('schedules')
+        .insert(scheduleInserts)
+        .select();
+
+    if (scheduleError) {
+        console.error(
+        'Schedule creation failed:',
+        scheduleError
+        );
+
+        // メモだけ残る状態を避ける
+        await supabase
+        .from('memos')
+        .delete()
+        .eq('id', newMemo.id);
+
+        alert(
+        '復習スケジュールの作成に失敗しました: ' +
+        scheduleError.message
+        );
+
+        return;
+    }
+
+    // 3. Push通知が有効ならQStashに予約
+    if (subscription && schedules) {
+        const pushTitle =
+        newMemo.type === 'question'
+            ? '🐱 猫がお腹を空かせています'
+            : '📝 復習メモ';
+
         const pushBody = newMemo.title;
 
-        for (const item of scheduleInserts) {
-          fetch('/api/schedule-forgetting', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              subscription,
-              title: pushTitle,
-              body: pushBody,
-              scheduledAt: item.scheduled_at,
-            }),
-          }).catch((err) => console.error(err));
-        }
-      }
+        for (const schedule of schedules) {
+        try {
+            const response = await fetch(
+            '/api/schedule-forgetting',
+            {
+                method: 'POST',
 
-      setMemos([newMemo, ...memos]);
-      setTitle('');
-      setAnswer('');
-      setTag('');
-      fetchTodayTasks();
-      alert('カードを作成しました！');
+                headers: {
+                'Content-Type':
+                    'application/json',
+                },
+
+                body: JSON.stringify({
+                subscription,
+                title: pushTitle,
+                body: pushBody,
+                scheduledAt:
+                    schedule.scheduled_at,
+                }),
+            }
+            );
+
+            const result =
+            await response.json();
+
+            if (
+            !response.ok ||
+            !result.messageId
+            ) {
+            throw new Error(
+                result.error ||
+                'QStash messageId was not returned'
+            );
+            }
+
+            // 4. QStashのmessageIdを保存
+            const {
+            error: updateError,
+            } = await supabase
+            .from('schedules')
+            .update({
+                qstash_message_id:
+                result.messageId,
+            })
+            .eq('id', schedule.id);
+
+            if (updateError) {
+            console.error(
+                'Failed to save QStash messageId:',
+                updateError
+            );
+
+            // DB保存に失敗した場合、
+            // QStash側の予約を削除して孤児通知を防ぐ
+            try {
+                await fetch(
+                '/api/cancel-notification',
+                {
+                    method: 'POST',
+
+                    headers: {
+                    'Content-Type':
+                        'application/json',
+                    },
+
+                    body: JSON.stringify({
+                    messageId:
+                        result.messageId,
+                    }),
+                }
+                );
+            } catch (cancelError) {
+                console.error(
+                'Failed to rollback QStash notification:',
+                cancelError
+                );
+            }
+
+            throw updateError;
+            }
+
+        } catch (notificationError) {
+            console.error(
+            'Notification scheduling failed:',
+            notificationError
+            );
+        }
+        }
     }
-  };
+
+    setMemos([
+        newMemo,
+        ...memos,
+    ]);
+
+    setTitle('');
+    setAnswer('');
+    setTag('');
+
+    await fetchTodayTasks();
+
+    alert(
+        'カードを作成しました！'
+    );
+    };
 
   const handleCompleteReview = async (scheduleId: string) => {
     setShowCurrentAnswer(false);
@@ -420,58 +595,519 @@ export default function Home() {
     }
   };
 
-  const handleResetReview = async (task: ReviewTask) => {
+    const scheduleImmediateReviewNotification =
+    async (
+        memoId: string
+    ): Promise<boolean> => {
+        if (!subscription) {
+        return true;
+        }
+
+        // stage 1 のscheduleを取得
+        const {
+        data: schedule,
+        error,
+        } = await supabase
+        .from('schedules')
+        .select(`
+            id,
+            scheduled_at,
+            memos (*)
+        `)
+        .eq('memo_id', memoId)
+        .eq('stage', 1)
+        .eq('completed', false)
+        .maybeSingle();
+
+        if (error || !schedule) {
+        console.error(
+            'Failed to get reset schedule:',
+            error
+        );
+        return false;
+        }
+
+        const memo = Array.isArray(schedule.memos)
+        ? schedule.memos[0]
+        : schedule.memos;
+
+        if (!memo) {
+        console.error(
+            'Memo not found for schedule:',
+            memoId
+        );
+        return false;
+        }
+
+        // ==========================================
+        // 「忘れた」→ 10分後に再通知
+        // ==========================================
+        const retryAt = new Date(
+        Date.now() + 10 * 60 * 1000
+        );
+
+        try {
+        const response = await fetch(
+            '/api/schedule-forgetting',
+            {
+            method: 'POST',
+
+            headers: {
+                'Content-Type':
+                'application/json',
+            },
+
+            body: JSON.stringify({
+                subscription,
+
+                title:
+                memo.type === 'question'
+                    ? '🐱 猫がお腹を空かせています'
+                    : '📝 復習メモ',
+
+                body:
+                memo.type === 'question'
+                    ? `「${memo.title}」をもう一度復習しましょう！`
+                    : `「${memo.title}」をもう一度確認しましょう！`,
+
+                // 10分後の日時を指定
+                scheduledAt:
+                retryAt.toISOString(),
+            }),
+            }
+        );
+
+        const result =
+            await response.json();
+
+        if (
+            !response.ok ||
+            !result.messageId
+        ) {
+            throw new Error(
+            result.error ||
+            'messageId not returned'
+            );
+        }
+
+        // ==========================================
+        // 新しいQStash messageIdを保存
+        // ==========================================
+        const {
+            error: updateError,
+        } = await supabase
+            .from('schedules')
+            .update({
+            scheduled_at:
+                retryAt.toISOString(),
+
+            qstash_message_id:
+                result.messageId,
+
+            completed: false,
+            })
+            .eq(
+            'id',
+            schedule.id
+            );
+
+        if (updateError) {
+            console.error(
+            'Failed to save new QStash messageId:',
+            updateError
+            );
+
+            // DB更新に失敗した場合、
+            // 作成したQStash通知を削除して
+            // 孤児通知が残らないようにする
+            try {
+            await fetch(
+                '/api/cancel-notification',
+                {
+                method: 'POST',
+
+                headers: {
+                    'Content-Type':
+                    'application/json',
+                },
+
+                body: JSON.stringify({
+                    messageId:
+                    result.messageId,
+                }),
+                }
+            );
+            } catch (cancelError) {
+            console.error(
+                'Failed to rollback QStash notification:',
+                cancelError
+            );
+            }
+
+            return false;
+        }
+
+        console.log(
+            `Review retry notification scheduled for ${retryAt.toISOString()}`
+        );
+
+        return true;
+
+        } catch (error) {
+        console.error(
+            'Failed to schedule retry notification:',
+            error
+        );
+
+        return false;
+        }
+    };
+
+const handleResetReview = async (
+  task: ReviewTask
+) => {
+  setShowCurrentAnswer(false);
+
+  setDragOffset({
+    x: 0,
+    y: 0,
+  });
+
+  setFlyOutDirection(null);
+
+  // ==========================================
+  // 1. 既存の予約通知を全てキャンセル
+  // ==========================================
+  const cancelled =
+    await cancelNotificationsForMemo(
+      task.memo.id
+    );
+
+  if (!cancelled) {
+    alert(
+      '既存の通知をキャンセルできなかったため、復習スケジュールを変更しませんでした。'
+    );
+
+    return;
+  }
+
+  // ==========================================
+  // 2. スケジュールをリセット
+  // ==========================================
+  const {
+    error,
+  } = await supabase
+    .from('schedules')
+    .update({
+      stage: 1,
+
+      // 一旦現在時刻を入れておく
+      // 実際の再通知時刻は
+      // scheduleImmediateReviewNotification
+      // で10分後に更新する
+      scheduled_at:
+        new Date().toISOString(),
+
+      completed: false,
+
+      qstash_message_id: null,
+    })
+    .eq(
+      'memo_id',
+      task.memo.id
+    );
+
+  if (error) {
+    alert(
+      '復習スケジュールのリセットに失敗しました: ' +
+      error.message
+    );
+
+    return;
+  }
+
+  // ==========================================
+  // 3. 10分後の再通知を予約
+  // ==========================================
+  const scheduled =
+    await scheduleImmediateReviewNotification(
+      task.memo.id
+    );
+
+  if (!scheduled) {
+    alert(
+      '10分後の再通知の予約に失敗しました。'
+    );
+
+    await fetchTodayTasks();
+
+    return;
+  }
+
+  // ==========================================
+  // 4. 復習失敗の報酬処理
+  // ==========================================
+  handleReviewReward(false);
+
+  // ==========================================
+  // 5. 画面を更新
+  // ==========================================
+  await fetchTodayTasks();
+
+  alert(
+    '忘れたとして記録しました。\n10分後にもう一度通知します。'
+  );
+};
+
+const handleResetScheduleForMemo =
+  async (
+    memoId: string
+  ) => {
     setShowCurrentAnswer(false);
-    setDragOffset({ x: 0, y: 0 });
+    setDragOffset({
+      x: 0,
+      y: 0,
+    });
     setFlyOutDirection(null);
 
-    const { error } = await supabase
+    // 既存通知をキャンセル
+    const cancelled =
+      await cancelNotificationsForMemo(
+        memoId
+      );
+
+    if (!cancelled) {
+      alert(
+        '既存の通知をキャンセルできなかったため、復習スケジュールを変更しませんでした。'
+      );
+      return;
+    }
+
+    // スケジュールをリセット
+    const {
+      error,
+    } = await supabase
       .from('schedules')
       .update({
         stage: 1,
-        scheduled_at: new Date().toISOString(),
+        scheduled_at:
+          new Date().toISOString(),
         completed: false,
+        qstash_message_id: null,
       })
-      .eq('id', task.schedule_id);
+      .eq(
+        'memo_id',
+        memoId
+      );
 
-    if (!error) {
-      handleReviewReward(false);
-      fetchTodayTasks();
+    if (error) {
+      alert(
+        '復習スケジュールのリセットに失敗しました: ' +
+        error.message
+      );
+      return;
     }
-  };
 
-  const handleResetScheduleForMemo = async (memoId: string) => {
-    setShowCurrentAnswer(false);
-    setDragOffset({ x: 0, y: 0 });
-    setFlyOutDirection(null);
+    // 新しい通知を予約
+    await scheduleImmediateReviewNotification(
+      memoId
+    );
 
-    const { error } = await supabase
-      .from('schedules')
-      .update({
-        stage: 1,
-        scheduled_at: new Date().toISOString(),
-        completed: false,
-      })
-      .eq('memo_id', memoId);
+    handleReviewReward(false);
 
-    if (!error) {
-      handleReviewReward(false);
-      fetchTodayTasks();
-    }
+    await fetchTodayTasks();
   };
 
   const togglePracticeAnswer = (memoId: string) => {
     setShowAnswerPracticeMap((prev) => ({ ...prev, [memoId]: !prev[memoId] }));
   };
 
-  const handleDeleteMemo = async (id: string) => {
-    if (!confirm('削除しますか？')) return;
-    const { error } = await supabase.from('memos').delete().eq('id', id);
-    if (!error) {
-      setMemos(memos.filter((memo) => memo.id !== id));
-      setTodayTasks(todayTasks.filter((task) => task.memo.id !== id));
+    const handleDeleteMemo = async (
+    id: string
+    ) => {
+    if (!confirm('削除しますか？')) {
+        return;
     }
-  };
+
+    // 1. 対象メモの全スケジュールを取得
+    const {
+        data: schedules,
+        error: scheduleFetchError,
+    } = await supabase
+        .from('schedules')
+        .select(
+        'id, qstash_message_id'
+        )
+        .eq('memo_id', id);
+
+    if (scheduleFetchError) {
+        alert(
+        '通知情報の取得に失敗しました: ' +
+        scheduleFetchError.message
+        );
+        return;
+    }
+
+    // 2. QStash予約通知を全てキャンセル
+    if (schedules) {
+        for (const schedule of schedules) {
+        if (!schedule.qstash_message_id) {
+            continue;
+        }
+
+        try {
+            const response = await fetch(
+            '/api/cancel-notification',
+            {
+                method: 'POST',
+
+                headers: {
+                'Content-Type':
+                    'application/json',
+                },
+
+                body: JSON.stringify({
+                messageId:
+                    schedule.qstash_message_id,
+                }),
+            }
+            );
+
+            if (!response.ok) {
+            const result =
+                await response.json()
+                .catch(() => null);
+
+            console.error(
+                'Failed to cancel notification:',
+                result
+            );
+
+            alert(
+                '予約通知の削除に失敗したため、問題の削除を中止しました。'
+            );
+
+            return;
+            }
+
+        } catch (error) {
+            console.error(
+            'Failed to cancel QStash notification:',
+            error
+            );
+
+            alert(
+            '予約通知の削除に失敗したため、問題の削除を中止しました。'
+            );
+
+            return;
+        }
+        }
+    }
+
+    // 3. Supabaseからメモを削除
+    const {
+        error: deleteError,
+    } = await supabase
+        .from('memos')
+        .delete()
+        .eq('id', id);
+
+    if (deleteError) {
+        alert(
+        '削除失敗: ' +
+        deleteError.message
+        );
+        return;
+    }
+
+    // 4. 画面からも削除
+    setMemos(
+        memos.filter(
+        (memo) => memo.id !== id
+        )
+    );
+
+    setTodayTasks(
+        todayTasks.filter(
+        (task) => task.memo.id !== id
+        )
+    );
+
+    alert(
+        'カードと予約通知を削除しました。'
+    );
+    };
+
+    const cancelNotificationsForMemo = async (
+    memoId: string
+    ): Promise<boolean> => {
+    const {
+        data: schedules,
+        error,
+    } = await supabase
+        .from('schedules')
+        .select(
+        'id, qstash_message_id'
+        )
+        .eq('memo_id', memoId);
+
+    if (error) {
+        console.error(
+        'Failed to fetch schedules:',
+        error
+        );
+        return false;
+    }
+
+    if (!schedules) {
+        return true;
+    }
+
+    for (const schedule of schedules) {
+        if (!schedule.qstash_message_id) {
+        continue;
+        }
+
+        try {
+        const response = await fetch(
+            '/api/cancel-notification',
+            {
+            method: 'POST',
+
+            headers: {
+                'Content-Type':
+                'application/json',
+            },
+
+            body: JSON.stringify({
+                messageId:
+                schedule.qstash_message_id,
+            }),
+            }
+        );
+
+        if (!response.ok) {
+            console.error(
+            'Failed to cancel notification:',
+            schedule.qstash_message_id
+            );
+
+            return false;
+        }
+
+        } catch (error) {
+        console.error(
+            'Notification cancellation error:',
+            error
+        );
+
+        return false;
+        }
+    }
+
+    return true;
+    };
 
   const handleSubscribe = async () => {
     try {
