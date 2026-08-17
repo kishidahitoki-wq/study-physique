@@ -641,7 +641,7 @@ export default function Home() {
         // 「忘れた」→ 10分後に再通知
         // ==========================================
         const retryAt = new Date(
-        Date.now() + 10 * 60 * 1000
+        Date.now() + 1 * 60 * 1000
         );
 
         try {
