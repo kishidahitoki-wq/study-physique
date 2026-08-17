@@ -5,6 +5,11 @@ const qstashClient = new Client({
   token: process.env.QSTASH_TOKEN!,
 });
 
+// QStashの1回の予約は7日以内にする。
+// 少し余裕を持たせて6日23時間にする。
+const MAX_DELAY_SECONDS =
+  6 * 24 * 60 * 60 + 23 * 60 * 60;
+
 export async function POST(req: Request) {
   try {
     const {
@@ -12,11 +17,15 @@ export async function POST(req: Request) {
       title,
       body,
       scheduledAt,
+      scheduleId,
     } = await req.json();
 
-    if (!subscription || !scheduledAt) {
+    if (!subscription || !scheduledAt || !scheduleId) {
       return NextResponse.json(
-        { error: 'Missing parameters' },
+        {
+          error:
+            'Missing subscription, scheduledAt, or scheduleId',
+        },
         { status: 400 }
       );
     }
@@ -25,24 +34,39 @@ export async function POST(req: Request) {
 
     if (Number.isNaN(targetTime)) {
       return NextResponse.json(
-        { error: 'Invalid scheduledAt' },
+        {
+          error: 'Invalid scheduledAt',
+        },
         { status: 400 }
       );
     }
 
     const now = Date.now();
 
-    // 過去の日時が指定された場合でも最低1秒後には送る
-    const delaySeconds = Math.max(
+    const remainingSeconds = Math.max(
       1,
       Math.floor((targetTime - now) / 1000)
+    );
+
+    /*
+     * 7日以上先なら、
+     * 今から6日23時間後に「中継通知」を実行する。
+     *
+     * 7日以内になったら、最終的なscheduledAtまで
+     * 一度だけ再予約する。
+     */
+    const delaySeconds = Math.min(
+      remainingSeconds,
+      MAX_DELAY_SECONDS
     );
 
     const host = req.headers.get('host');
 
     if (!host) {
       return NextResponse.json(
-        { error: 'Host header is missing' },
+        {
+          error: 'Host header is missing',
+        },
         { status: 500 }
       );
     }
@@ -54,6 +78,13 @@ export async function POST(req: Request) {
     const destinationUrl =
       `${protocol}://${host}/api/qstash`;
 
+    console.log('[QStash] scheduling', {
+      scheduleId,
+      scheduledAt,
+      remainingSeconds,
+      delaySeconds,
+    });
+
     const result = await qstashClient.publishJSON({
       url: destinationUrl,
 
@@ -61,9 +92,21 @@ export async function POST(req: Request) {
         subscription,
         title,
         pushBody: body,
+
+        // 最終的に通知したい日時
+        scheduledAt,
+
+        // このscheduleを識別するためのID
+        scheduleId,
       },
 
       delay: delaySeconds,
+    });
+
+    console.log('[QStash] scheduled', {
+      scheduleId,
+      messageId: result.messageId,
+      delaySeconds,
     });
 
     return NextResponse.json({
@@ -73,7 +116,7 @@ export async function POST(req: Request) {
 
   } catch (error: any) {
     console.error(
-      'QStash Schedule Error:',
+      '[QStash] Schedule Error:',
       error
     );
 
