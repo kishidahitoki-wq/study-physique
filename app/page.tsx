@@ -135,7 +135,6 @@ export default function Home() {
       return;
     }
 
-    // ローカルストレージのデータを削除
     localStorage.removeItem('cat_coins');
     localStorage.removeItem('cat_love');
     localStorage.removeItem('physique_streak');
@@ -148,7 +147,6 @@ export default function Home() {
     localStorage.removeItem('cat_is_sick');
     localStorage.removeItem('cat_debt');
 
-    // ステートを初期値にリセット
     setCoins(0);
     setCatLove(0);
     setStreak(0);
@@ -1436,7 +1434,6 @@ const handleResetScheduleForMemo =
             position: 'relative',
           }}
         >
-          {/* 病気アラートバナー */}
           {isSick && (
             <div
               style={{
@@ -1472,7 +1469,6 @@ const handleResetScheduleForMemo =
             </div>
           )}
 
-          {/* 借金アラートバナー */}
           {debt > 0 && (
             <div
               style={{
@@ -1912,7 +1908,6 @@ const handleResetScheduleForMemo =
               🐱 にゃんこショップ
             </h3>
 
-            {/* 商品1: キャットフード */}
             <div
               style={{
                 backgroundColor: '#ffffff',
@@ -1947,7 +1942,6 @@ const handleResetScheduleForMemo =
               </button>
             </div>
 
-            {/* 商品2: 高級缶詰 */}
             <div
               style={{
                 backgroundColor: '#ffffff',
@@ -1982,7 +1976,6 @@ const handleResetScheduleForMemo =
               </button>
             </div>
 
-            {/* 商品3: おもちゃ */}
             <div
               style={{
                 backgroundColor: '#ffffff',
@@ -2697,7 +2690,6 @@ const handleResetScheduleForMemo =
               </div>
             </div>
 
-            {/* 🔄 リセット用のセクション */}
             <div
               style={{
                 backgroundColor: '#ffffff',
